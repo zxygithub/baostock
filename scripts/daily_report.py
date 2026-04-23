@@ -27,6 +27,18 @@ PROJECT_ROOT = Path(__file__).parent.parent
 DB_PATH = PROJECT_ROOT / "data" / "baostock.db"
 LOG_DIR = PROJECT_ROOT / "logs"
 CONFIG_PATH = PROJECT_ROOT / "config.yaml"
+ENV_PATH = PROJECT_ROOT / ".env"
+
+def load_dotenv():
+    """Load environment variables from .env file if it exists."""
+    if not ENV_PATH.exists():
+        return
+    with open(ENV_PATH, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -269,6 +281,7 @@ def send_email(cfg, msg):
 # Main
 # ---------------------------------------------------------------------------
 def main():
+    load_dotenv()
     cfg = load_config()
     email_cfg = get_email_config(cfg)
     
