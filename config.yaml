@@ -1,0 +1,89 @@
+# ============================================================================
+# BaoStock Configuration File
+# ============================================================================
+# This file contains user-configurable settings for the BaoStock data download.
+# Technical constants (field definitions, paths, index codes) are in src/config.py.
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# API configuration
+# ---------------------------------------------------------------------------
+api:
+  socket_timeout: 30  # seconds for socket recv/connect
+  daily_request_limit: 45000  # daily API request limit
+
+# ---------------------------------------------------------------------------
+# Download configuration
+# ---------------------------------------------------------------------------
+download:
+  # K-line data (daily/weekly/monthly/minute)
+  kline:
+    daily:
+      enabled: true
+      start_date: "1990-12-19"  # BaoStock market inception date
+      adjustflags: [1, 2, 3]  # 1: post-adjust, 2: pre-adjust, 3: no adjust
+    weekly:
+      enabled: true
+      adjustflags: [1, 2, 3]
+    monthly:
+      enabled: true
+      adjustflags: [1, 2, 3]
+    minute:
+      enabled: false  # disabled by default (large data volume)
+      start_date: "2019-01-02"  # BaoStock only has ~5 years of minute data
+      frequencies: ["5", "15", "30", "60"]
+      adjustflags: [3]  # only no-adjust for minute data
+
+  # Financial data (quarterly reports)
+  financial:
+    enabled: true
+    start_year: 2007
+    types:
+      - profit
+      - operation
+      - growth
+      - balance
+      - cashflow
+      - dupont
+
+  # Company reports (forecast/summary)
+  reports:
+    enabled: true
+    start_date: "2003-01-01"
+
+  # Dividend and adjust factor data
+  dividend:
+    enabled: true
+    start_year: 2007
+
+  # Macroeconomic data
+  macro:
+    enabled: true
+
+  # Index constituents
+  components:
+    enabled: true
+
+  # Index K-line data
+  index_kline:
+    enabled: true
+    start_date: "2006-01-01"
+
+# ---------------------------------------------------------------------------
+# Stock filtering and batch processing
+# ---------------------------------------------------------------------------
+stocks:
+  filter: "type=1 AND status=1"  # SQL filter for stock selection
+  batch_size: 200  # stocks per batch for downloads
+  batch_sleep: 2  # seconds to sleep between batches
+
+# ---------------------------------------------------------------------------
+# Email reporting (for daily_report.py)
+# ---------------------------------------------------------------------------
+email:
+  enabled: true
+  smtp_server: "smtp.qq.com"
+  smtp_port: 465
+  sender: "your_email@qq.com"
+  password: "your_smtp_authorization_code"
+  receiver: "your_receiver_email@qq.com"

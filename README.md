@@ -1,0 +1,263 @@
+# BaoStock 数据下载器
+
+从 BaoStock API 下载中国A股市场数据（K线、财务数据、宏观经济数据）到 SQLite 数据库。
+
+## 📋 功能特性
+
+- **完整的数据覆盖**：日/周/月/分钟K线数据，支持3种复权类型
+- **财务数据**：利润表、运营能力、成长能力、资产负债表、现金流量表、杜邦分析
+- **宏观经济数据**：存款/贷款利率、存款准备金率、货币供应量
+- **指数数据**：上证50、沪深300、中证500成分股及指数K线
+- **公司报告**：业绩预告、业绩快报、分红送转数据
+- **智能下载**：断点续传、批量处理、会话自动重连
+- **数据管理**：完整的数据库管理工具和日志系统
+
+## 🚀 快速开始
+
+### 1. 安装依赖
+```bash
+uv sync
+```
+
+### 2. 使用 start.sh（推荐）
+```bash
+# 初始化数据库
+./start.sh init
+
+# 全量数据下载（所有阶段）
+./start.sh full
+
+# 每日增量更新
+./start.sh update
+
+# 检查下载进度
+./start.sh status
+
+# 查看最近日志
+./start.sh logs
+```
+
+### 3. 数据管理
+```bash
+# 列出所有表及其行数
+./clean_data.sh --list
+
+# 清空特定表
+./clean_data.sh --table all_stock_daily
+
+# 清空所有表（需要确认）
+./clean_data.sh --all
+```
+
+## 📖 详细文档
+
+- **[执行流程](docs/执行流程.md)** - 详细的项目架构和执行流程说明
+- **[数据下载方案](docs/data_download_plan.md)** - 数据库设计和下载策略
+- **[改进计划](docs/improvement_plan.md)** - 已知问题和改进建议
+- **[BaoStock API](docs/pythonAPI.md)** - BaoStock官方API文档
+
+## 🗂️ 项目结构
+
+```
+baostock/
+├── config.yaml              # 下载配置文件（用户可修改）
+├── pyproject.toml          # Python项目配置
+├── start.sh                # 主要入口脚本
+├── clean_data.sh           # 数据管理脚本
+├── data/                   # 数据库文件（git忽略）
+│   └── baostock.db
+├── logs/                   # 日志文件（git忽略）
+├── docs/                   # 项目文档
+├── scripts/                # 入口脚本
+│   ├── download_all.py     # 全量下载
+│   ├── update_daily.py     # 增量更新
+│   └── init_db.py          # 数据库初始化
+├── src/                    # 核心代码
+│   ├── config.py           # 技术常量和字段定义
+│   ├── config_loader.py    # 配置加载器
+│   ├── db_manager.py       # 数据库连接和表结构
+│   ├── downloaders/        # 数据下载器
+│   │   ├── base.py         # 基础下载器
+│   │   ├── meta_downloader.py      # 元数据下载
+│   │   ├── macro_downloader.py     # 宏观经济数据下载
+│   │   ├── component_downloader.py # 指数成分股下载
+│   │   ├── index_downloader.py     # 指数K线下载
+│   │   ├── kline_downloader.py     # 股票K线下载
+│   │   ├── financial_downloader.py # 财务数据下载
+│   │   ├── report_downloader.py    # 公司报告下载
+│   │   └── dividend_downloader.py  # 分红数据下载
+│   └── utils/              # 工具类
+│       ├── helpers.py      # 辅助函数
+│       └── validator.py    # 数据验证
+└── tests/                  # 测试文件
+```
+
+## ⚙️ 配置说明
+
+项目采用**双配置文件**设计，职责清晰：
+
+### config.yaml（用户配置）
+
+用户可以自由修改的运行参数：
+
+```yaml
+# API 配置
+api:
+  socket_timeout: 30          # 网络超时（秒）
+  daily_request_limit: 95000  # 每日 API 请求上限
+
+# 下载任务开关与日期范围
+download:
+  kline:
+    daily:
+      enabled: true                    # 是否下载日线
+      start_date: "1990-12-19"         # 起始日期
+      adjustflags: [1, 2, 3]           # 复权方式：1=后复权，2=前复权，3=不复权
+    weekly:
+      enabled: true
+    monthly:
+      enabled: true
+    minute:
+      enabled: false                   # 分钟数据量较大，默认关闭
+      start_date: "2019-01-02"         # 分钟线起始日期（仅支持近5年）
+      frequencies: ["5", "15", "30", "60"]
+  financial:
+    enabled: true
+    start_year: 2007                   # 财务数据起始年份
+  reports:
+    enabled: true
+    start_date: "2003-01-01"
+  dividend:
+    enabled: true
+    start_year: 2007
+  macro:
+    enabled: true
+  index_kline:
+    enabled: true
+    start_date: "2006-01-01"
+
+# 批处理配置
+stocks:
+  filter: "type=1 AND status=1"  # 股票筛选条件（SQL WHERE 子句）
+  batch_size: 200                # 每批处理的股票数量
+  batch_sleep: 2                 # 批次间休眠时间（秒）
+```
+
+### src/config.py（技术常量）
+
+开发者维护的技术常量，用户通常无需修改：
+
+- **数据库路径**：`DB_PATH`
+- **字段定义**：K 线字段、指数字段等
+- **指数代码列表**：`INDEX_CODES`
+- **内部参数**：`FINANCIAL_SLEEP`、`LOGIN_REFRESH_INTERVAL`、`MAX_RETRIES`
+
+### src/config_loader.py（配置加载器）
+
+统一从 config.yaml 读取配置，提供便捷的访问函数：
+
+```python
+from src.config_loader import (
+    get_batch_size,          # 获取批处理大小
+    get_kline_start_date,    # 获取 K 线起始日期
+    is_download_enabled,     # 检查下载开关
+    get_financial_start_year # 获取财务起始年份
+)
+```
+
+**修改建议**：
+- 用户只需编辑 `config.yaml` 即可控制所有下载行为
+- `config.py` 仅在需要修改字段定义或内部参数时才需调整
+
+## 📊 数据库设计
+
+项目使用SQLite数据库，共设计**33张表**，涵盖：
+
+- **元数据表**：股票基本信息、交易日历、行业分类
+- **K线数据表**：日/周/月/分钟K线（支持3种复权）
+- **财务数据表**：6类季频财务指标
+- **公司报告表**：业绩预告、业绩快报
+- **分红数据表**：除权除息、复权因子
+- **指数数据表**：成分股、指数K线
+- **宏观数据表**：利率、准备金率、货币供应量
+
+详细表结构见 [数据下载方案](docs/data_download_plan.md)。
+
+## 🔧 高级用法
+
+### 跳过特定阶段
+```bash
+# 跳过财务数据和分钟数据下载
+./start.sh full --skip-financial --skip-minute
+```
+
+### 自定义股票筛选
+```bash
+# 只下载上证A股（type=1）且正常上市（status=1）的股票
+# 在 config.yaml 中配置：
+stocks:
+  filter: "type=1 AND status=1"
+  batch_size: 200
+  batch_sleep: 2
+```
+
+### 日志管理
+```bash
+# 查看最新日志
+./start.sh logs
+
+# 清理30天前的日志
+./start.sh clean-logs 30
+
+# 清理临时表
+./start.sh clean-tmp
+```
+
+## ⚠️ 注意事项
+
+1. **API限制**：BaoStock API有调用频率限制，项目已内置休眠机制
+2. **数据量**：全量下载数据量较大，需要足够的磁盘空间
+3. **网络要求**：需要稳定的网络连接
+4. **时间消耗**：全量下载可能需要数小时，建议在服务器上运行
+5. **数据更新**：财务数据按季度更新，K线数据每日更新
+
+## 📈 性能优化
+
+- **断点续传**：支持下载中断后恢复，避免重复下载
+- **批量处理**：股票代码分批下载，每批200个
+- **会话管理**：自动检测会话超时并重新登录
+- **数据库优化**：使用WAL模式提升写入性能
+
+## 🔄 更新日志
+
+- **2026-04-19**：文档维护更新，修复文档不一致问题
+- **2026-04-18**：添加断点续传功能，优化下载性能
+- **2026-04-15**：修复分红表主键冲突问题
+- **2026-04-10**：添加数据完整性校验功能
+
+## 📄 许可证
+
+本项目基于 MIT 许可证开源。详见 [LICENSE](LICENSE) 文件。
+
+## 🤝 贡献指南
+
+欢迎提交Issue和Pull Request！在贡献之前，请阅读：
+1. [改进计划](docs/improvement_plan.md) - 了解当前已知问题和改进方向
+2. [执行流程](docs/执行流程.md) - 理解项目架构和执行流程
+
+## ❓ 常见问题
+
+**Q: 下载过程中断怎么办？**
+A: 项目支持断点续传，重新运行相同命令会自动从断点处继续下载。
+
+**Q: 如何只更新最近的数据？**
+A: 使用 `./start.sh update` 进行每日增量更新。
+
+**Q: 数据库文件太大怎么办？**
+A: 可以使用 `./clean_data.sh` 清理不需要的历史数据。
+
+**Q: 如何查看下载进度？**
+A: 使用 `./start.sh status` 查看数据库状态，或查看日志文件。
+
+---
+*最后更新：2026年4月19日*
