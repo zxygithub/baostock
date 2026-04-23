@@ -178,8 +178,9 @@ class BaseDownloader:
             try:
                 self.ensure_login()
                 rs = query_func(**kwargs)
+                # 无论成功失败都计数，因为服务器端已计数
+                self._increment_request_count()
                 if rs.error_code == "0":
-                    self._increment_request_count()
                     return rs
                 if "session" in rs.error_msg.lower() or "网络" in rs.error_msg:
                     self.logger.warning(
