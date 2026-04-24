@@ -11,6 +11,7 @@
 ### 2. 技术设计
 - **[数据下载方案](data_download_plan.md)** - 数据库设计、表结构、下载策略
 - **[改进计划](improvement_plan.md)** - 已知问题、改进建议和实施路线图
+- **[优化方案](optimization_plan.md)** - K 线优先、财务降级优化计划
 
 ### 3. API 参考
 - **[BaoStock Python API](pythonAPI.md)** - BaoStock 官方API文档（复制版）
