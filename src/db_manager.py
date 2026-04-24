@@ -635,6 +635,17 @@ class DBManager:
             return row[0]
         return None
 
+    def is_trading_day(self, date_str: str) -> bool:
+        conn = self.get_connection()
+        cursor = conn.execute(
+            "SELECT is_trading_day FROM trade_dates WHERE calendar_date = ?",
+            (date_str,)
+        )
+        row = cursor.fetchone()
+        if row:
+            return row[0] == "1"
+        return False
+
     def migrate_schema(self) -> None:
         conn = self.get_connection()
         tables = {

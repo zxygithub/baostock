@@ -53,19 +53,27 @@ def main():
         dl.download_trade_dates()
         dl.download_stock_industry()
 
-    if datetime.now().weekday() == 0:
-        with ComponentDownloader(str(DB_PATH), logger) as dl:
-            dl.download_all_components()
+    # Check if today is a trading day
+    today = datetime.now().strftime("%Y-%m-%d")
+    is_trading = db.is_trading_day(today)
+    if not is_trading:
+        logger.info(f"Today ({today}) is not a trading day. Skipping K-line update.")
+    else:
+        logger.info(f"Today ({today}) is a trading day. Proceeding with K-line update.")
 
-    logger.info("Updating index K-line...")
-    with IndexDownloader(str(DB_PATH), logger) as dl:
-        dl.download_index_daily(start_date=index_start)
-        dl.download_index_weekly(start_date=index_start)
-        dl.download_index_monthly(start_date=index_start)
+        if datetime.now().weekday() == 0:
+            with ComponentDownloader(str(DB_PATH), logger) as dl:
+                dl.download_all_components()
 
-    logger.info("Updating stock daily K-line...")
-    with KlineDownloader(str(DB_PATH), logger) as dl:
-        dl.download_daily_kline(codes, start_date=start_date)
+        logger.info("Updating index K-line...")
+        with IndexDownloader(str(DB_PATH), logger) as dl:
+            dl.download_index_daily(start_date=index_start)
+            dl.download_index_weekly(start_date=index_start)
+            dl.download_index_monthly(start_date=index_start)
+
+        logger.info("Updating stock daily K-line...")
+        with KlineDownloader(str(DB_PATH), logger) as dl:
+            dl.download_daily_kline(codes, start_date=start_date)
 
     current_year, current_quarter = get_current_quarter()
     logger.info(f"Updating financial data for {current_year} Q{current_quarter}...")
