@@ -33,6 +33,7 @@ class FinancialDownloader(BaseDownloader):
         current_year, current_quarter = get_current_quarter()
 
         tasks = []
+        skipped = 0
         for code in codes:
             for year in range(start_year, end_year + 1):
                 # 如果指定了季度范围，且是单年份查询，使用指定范围
@@ -47,14 +48,19 @@ class FinancialDownloader(BaseDownloader):
                 for quarter in quarters:
                     if (code, year, quarter) not in existing:
                         tasks.append((code, year, quarter))
+                    else:
+                        skipped += 1
+
+        total_possible = len(tasks) + skipped
 
         if not tasks:
             self.logger.info(f"{table_name}: all up to date, skipping")
             return 0
 
         self.logger.info(
-            f"{table_name}: {len(tasks)} new quarters to download "
-            f"({len(existing)} already exist)"
+            f"{table_name}: {len(tasks)} tasks to download, "
+            f"{skipped} skipped (already exist), "
+            f"{total_possible} total checked"
         )
 
         batch_dfs: list[pd.DataFrame] = []
