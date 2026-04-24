@@ -108,7 +108,7 @@ def get_latest_download_times():
         return "N/A", "N/A"
         
     # Only match download logs (start with date pattern like 20260424_000501.log)
-    logs = sorted([f for f in LOG_DIR.glob("*.log") if re.match(r"2\d{13}\.log", f.name)])
+    logs = sorted([f for f in LOG_DIR.glob("*.log") if re.match(r"2\d{7}_\d{6}\.log", f.name)])
     if not logs:
         return "N/A", "N/A"
         
