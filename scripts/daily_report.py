@@ -13,6 +13,7 @@ import re
 import os
 import smtplib
 import sqlite3
+import baostock as bs
 from pathlib import Path
 from datetime import datetime, date
 from email.mime.text import MIMEText
@@ -106,7 +107,8 @@ def get_latest_download_times():
     if not LOG_DIR.exists():
         return "N/A", "N/A"
         
-    logs = sorted(LOG_DIR.glob("*.log"))
+    # Only match download logs (start with date pattern like 20260424_000501.log)
+    logs = sorted([f for f in LOG_DIR.glob("*.log") if re.match(r"2\d{13}\.log", f.name)])
     if not logs:
         return "N/A", "N/A"
         
@@ -126,6 +128,33 @@ def get_latest_download_times():
         end_time = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]} {ts[9:11]}:{ts[11:13]}:{ts[13:15]}"
         
     return start_time, end_time
+
+# ---------------------------------------------------------------------------
+# Blacklist Check
+# ---------------------------------------------------------------------------
+def check_blacklist_status():
+    """Check if current IP/account is blacklisted by BaoStock."""
+    try:
+        lg = bs.login()
+        if lg.error_code == "10001011":
+            bs.logout()
+            return "❌ 黑名单", "IP 已被列入黑名单 (10001011)"
+        if lg.error_code != "0":
+            bs.logout()
+            return "⚠️ 异常", f"登录失败: {lg.error_msg}"
+        
+        # Test a simple query
+        rs = bs.query_stock_basic(code="sh.600000")
+        bs.logout()
+        
+        if rs.error_code == "10001011":
+            return "❌ 黑名单", "查询时被限流或封禁"
+        if rs.error_code != "0":
+            return "⚠️ 异常", f"查询失败: {rs.error_msg}"
+            
+        return "✅ 正常", "IP/账号状态正常"
+    except Exception as e:
+        return "⚠️ 异常", f"检测出错: {e}"
 
 # ---------------------------------------------------------------------------
 # Estimate & Progress Calculation
@@ -195,7 +224,7 @@ def get_progress_table(active_stocks, trading_days, financial_years, counts):
 # ---------------------------------------------------------------------------
 # Email Generation & Sending
 # ---------------------------------------------------------------------------
-def build_email(sender, start_time, end_time, today_requests, table_rows):
+def build_email(sender, start_time, end_time, today_requests, blacklist_status, blacklist_detail, table_rows):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"BaoStock 数据下载日报 ({date.today().strftime('%Y-%m-%d')})"
     msg["From"] = sender
@@ -209,6 +238,9 @@ def build_email(sender, start_time, end_time, today_requests, table_rows):
             .summary {{ background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; }}
             .summary p {{ margin: 8px 0; font-size: 15px; }}
             .summary strong {{ color: #2980b9; }}
+            .status-ok {{ color: #27ae60; font-weight: bold; }}
+            .status-warn {{ color: #f39c12; font-weight: bold; }}
+            .status-error {{ color: #e74c3c; font-weight: bold; }}
             table {{ border-collapse: collapse; width: 100%; font-size: 14px; }}
             th {{ background: #34495e; color: white; padding: 10px 8px; text-align: left; }}
             td {{ padding: 8px; border-bottom: 1px solid #eee; }}
@@ -224,6 +256,7 @@ def build_email(sender, start_time, end_time, today_requests, table_rows):
             <p><strong>🕒 最近一次拉取开始时间:</strong> {start_time}</p>
             <p><strong>🏁 最近一次拉取结束时间:</strong> {end_time}</p>
             <p><strong>📈 今日已使用请求次数:</strong> {today_requests:,} 次</p>
+            <p><strong>🛡️ 黑名单状态:</strong> <span class="{'status-ok' if '正常' in blacklist_status else 'status-error'}">{blacklist_status}</span> - {blacklist_detail}</p>
         </div>
         
         <h3>数据拉取情况综合评估表</h3>
@@ -287,9 +320,13 @@ def main():
     
     today_requests, active_stocks, trading_days, fin_years, counts = get_db_stats()
     start_time, end_time = get_latest_download_times()
+    blacklist_status, blacklist_detail = check_blacklist_status()
     table_rows = get_progress_table(active_stocks, trading_days, fin_years, counts)
     
-    msg = build_email(email_cfg["sender"], start_time, end_time, today_requests, table_rows)
+    msg = build_email(
+        email_cfg["sender"], start_time, end_time, today_requests,
+        blacklist_status, blacklist_detail, table_rows
+    )
     send_email(email_cfg, msg)
 
 if __name__ == "__main__":
