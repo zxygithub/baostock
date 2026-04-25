@@ -10,7 +10,7 @@
 # ---------------------------------------------------------------------------
 api:
   socket_timeout: 30  # seconds for socket recv/connect
-  daily_request_limit: 48000  # daily API request limit
+  daily_request_limit: 49000  # daily API request limit
 
 # ---------------------------------------------------------------------------
 # Download configuration
