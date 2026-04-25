@@ -76,10 +76,20 @@ def main():
 
     logger.info("=== BaoStock Full Data Download ===")
 
+    from datetime import datetime
+
     with DBManager(str(DB_PATH)) as db:
         db.init_all_tables()
         db.migrate_schema()
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        is_trading = db.is_trading_day(today)
     logger.info("Database initialized.")
+
+    if is_trading:
+        logger.info(f"Today ({today}) is a trading day. Proceeding with K-line download.")
+    else:
+        logger.info(f"Today ({today}) is not a trading day. Skipping K-line download.")
 
     logger.info("Phase 2: Downloading metadata...")
     with MetaDownloader(str(DB_PATH), logger) as dl:
@@ -99,48 +109,51 @@ def main():
         comp_results = dl.download_all_components()
     logger.info(f"Components: {comp_results}")
 
-    if is_download_enabled("index_kline"):
-        logger.info("Phase 6: Downloading index K-line...")
-        with IndexDownloader(str(DB_PATH), logger) as dl:
-            idx_results = dl.download_all_index(
-                start_date=args.start_date or get_index_kline_start_date()
-            )
-        logger.info(f"Index K-line: {idx_results}")
-
-    if not args.skip_kline and is_download_enabled("kline", "daily"):
-        logger.info("Phase 7: Downloading stock K-line (daily/weekly/monthly)...")
-        with KlineDownloader(str(DB_PATH), logger) as dl:
-            ckpt_path = DB_PATH.parent / ".download_checkpoint.json"
-            dl.setup_signal_handler(ckpt_path)
-            dl._checkpoint_data = dl._load_checkpoint(ckpt_path)
-            kline_results = {}
-            kline_results["daily"] = dl.download_daily_kline(
-                codes,
-                start_date=args.start_date or get_kline_start_date("daily"),
-                end_date=args.end_date,
-            )
-            if not dl._interrupted:
-                kline_results["weekly"] = dl.download_weekly_kline(
-                    codes, start_date=args.start_date or get_kline_start_date("weekly")
+    if is_trading:
+        if is_download_enabled("index_kline"):
+            logger.info("Phase 6: Downloading index K-line...")
+            with IndexDownloader(str(DB_PATH), logger) as dl:
+                idx_results = dl.download_all_index(
+                    start_date=args.start_date or get_index_kline_start_date()
                 )
-            if not dl._interrupted:
-                kline_results["monthly"] = dl.download_monthly_kline(
-                    codes, start_date=args.start_date or get_kline_start_date("monthly")
-                )
-            if not dl._interrupted:
-                dl.clear_checkpoint(ckpt_path)
-        logger.info(f"Stock K-line: {kline_results}")
+            logger.info(f"Index K-line: {idx_results}")
 
-        if not args.skip_minute and is_download_enabled("kline", "minute"):
-            logger.info("Phase 8: Downloading minute K-line...")
+        if not args.skip_kline and is_download_enabled("kline", "daily"):
+            logger.info("Phase 7: Downloading stock K-line (daily/weekly/monthly)...")
             with KlineDownloader(str(DB_PATH), logger) as dl:
-                for freq in get_minute_frequencies():
-                    count = dl.download_minute_kline(
-                        codes,
-                        frequency=freq,
-                        start_date=args.start_date or get_kline_start_date("minute"),
+                ckpt_path = DB_PATH.parent / ".download_checkpoint.json"
+                dl.setup_signal_handler(ckpt_path)
+                dl._checkpoint_data = dl._load_checkpoint(ckpt_path)
+                kline_results = {}
+                kline_results["daily"] = dl.download_daily_kline(
+                    codes,
+                    start_date=args.start_date or get_kline_start_date("daily"),
+                    end_date=args.end_date,
+                )
+                if not dl._interrupted:
+                    kline_results["weekly"] = dl.download_weekly_kline(
+                        codes, start_date=args.start_date or get_kline_start_date("weekly")
                     )
-                    logger.info(f"  {freq}min: {count} rows")
+                if not dl._interrupted:
+                    kline_results["monthly"] = dl.download_monthly_kline(
+                        codes, start_date=args.start_date or get_kline_start_date("monthly")
+                    )
+                if not dl._interrupted:
+                    dl.clear_checkpoint(ckpt_path)
+            logger.info(f"Stock K-line: {kline_results}")
+
+            if not args.skip_minute and is_download_enabled("kline", "minute"):
+                logger.info("Phase 8: Downloading minute K-line...")
+                with KlineDownloader(str(DB_PATH), logger) as dl:
+                    for freq in get_minute_frequencies():
+                        count = dl.download_minute_kline(
+                            codes,
+                            frequency=freq,
+                            start_date=args.start_date or get_kline_start_date("minute"),
+                        )
+                        logger.info(f"  {freq}min: {count} rows")
+    else:
+        logger.info("Skipping Phase 6-8 (K-line) due to non-trading day.")
 
     if not args.skip_financial and is_download_enabled("financial"):
         logger.info("Phase 9: Downloading financial data...")
