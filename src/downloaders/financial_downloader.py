@@ -2,6 +2,7 @@ import baostock as bs
 import pandas as pd
 import logging
 import time
+from datetime import datetime
 from tqdm import tqdm
 
 from src.downloaders.base import BaseDownloader
@@ -107,6 +108,9 @@ class FinancialDownloader(BaseDownloader):
             return set()
 
     def _batch_upsert(self, df: pd.DataFrame, table_name: str) -> None:
+        if "update_time" not in df.columns:
+            df = df.copy()
+            df["update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         tmp = f"{table_name}_batch_tmp"
         df.to_sql(tmp, self.conn, if_exists="replace", index=False)
         cols = ", ".join(f'"{c}"' for c in df.columns)

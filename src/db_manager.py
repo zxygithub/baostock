@@ -1,7 +1,7 @@
 """Database initialization and management module for BaoStock data project."""
 
 import sqlite3
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 
@@ -62,7 +62,8 @@ class DBManager:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS trade_dates (
                 calendar_date   TEXT PRIMARY KEY,   -- 日期 (格式:YYYY-MM-DD)
-                is_trading_day  INTEGER NOT NULL    -- 是否交易日 (0:非交易日; 1:交易日)
+                is_trading_day  INTEGER NOT NULL,   -- 是否交易日 (0:非交易日; 1:交易日)
+                update_time     TEXT                -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
             )
         """)
 
@@ -75,7 +76,8 @@ class DBManager:
                 ipo_date    TEXT,               -- 上市日期
                 out_date    TEXT,               -- 退市日期
                 type        INTEGER,            -- 证券类型 (1:股票, 2:指数, 3:其它, 4:可转债, 5:ETF)
-                status      INTEGER             -- 上市状态 (1:上市, 0:退市)
+                status      INTEGER,            -- 上市状态 (1:上市, 0:退市)
+                update_time TEXT                -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
             )
         """)
 
@@ -87,7 +89,8 @@ class DBManager:
                 code                    TEXT PRIMARY KEY,   -- 证券代码
                 code_name               TEXT,               -- 证券名称
                 industry                TEXT,               -- 所属行业
-                industry_classification TEXT                -- 所属行业类别
+                industry_classification TEXT,               -- 所属行业类别
+                update_time             TEXT                -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
             )
         """)
 
@@ -99,6 +102,7 @@ class DBManager:
                 trade_status   INTEGER,         -- 交易状态 (1:正常交易, 0:停牌)
                 code_name      TEXT,            -- 证券名称
                 day            TEXT NOT NULL,   -- 查询日期
+                update_time    TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, day)
             )
         """)
@@ -128,6 +132,7 @@ class DBManager:
                 ps_ttm      REAL,            -- 滚动市销率 (精度:小数点后6位)
                 pcf_ncf_ttm REAL,            -- 滚动市现率 (精度:小数点后6位)
                 is_st       INTEGER,         -- 是否ST (1:是, 0:否)
+                update_time TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, date, adjustflag)
             )
         """)
@@ -153,6 +158,7 @@ class DBManager:
                 adjustflag  INTEGER,         -- 复权状态 (1:后复权, 2:前复权, 3:不复权)
                 turn        REAL,            -- 换手率 (精度:小数点后6位;单位:%)
                 pct_chg     REAL,            -- 涨跌幅(百分比) (精度:小数点后6位)
+                update_time TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, date, adjustflag)
             )
         """)
@@ -172,6 +178,7 @@ class DBManager:
                 adjustflag  INTEGER,         -- 复权状态 (1:后复权, 2:前复权, 3:不复权)
                 turn        REAL,            -- 换手率 (精度:小数点后6位;单位:%)
                 pct_chg     REAL,            -- 涨跌幅(百分比) (精度:小数点后6位)
+                update_time TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, date, adjustflag)
             )
         """)
@@ -190,6 +197,7 @@ class DBManager:
                 volume      REAL,            -- 成交数量 (单位:股;时间范围内累计)
                 amount      REAL,            -- 成交金额 (精度:小数点后4位;单位:人民币元;时间范围内累计)
                 adjustflag  INTEGER,         -- 复权状态 (1:后复权, 2:前复权, 3:不复权)
+                update_time TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, date, time, adjustflag)
             )
         """)
@@ -211,6 +219,7 @@ class DBManager:
                 volume      REAL,            -- 成交数量 (单位:股;时间范围内累计)
                 amount      REAL,            -- 成交金额 (精度:小数点后4位;单位:人民币元;时间范围内累计)
                 adjustflag  INTEGER,         -- 复权状态 (1:后复权, 2:前复权, 3:不复权)
+                update_time TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, date, time, adjustflag)
             )
         """)
@@ -232,6 +241,7 @@ class DBManager:
                 volume      REAL,            -- 成交数量 (单位:股;时间范围内累计)
                 amount      REAL,            -- 成交金额 (精度:小数点后4位;单位:人民币元;时间范围内累计)
                 adjustflag  INTEGER,         -- 复权状态 (1:后复权, 2:前复权, 3:不复权)
+                update_time TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, date, time, adjustflag)
             )
         """)
@@ -253,6 +263,7 @@ class DBManager:
                 volume      REAL,            -- 成交数量 (单位:股;时间范围内累计)
                 amount      REAL,            -- 成交金额 (精度:小数点后4位;单位:人民币元;时间范围内累计)
                 adjustflag  INTEGER,         -- 复权状态 (1:后复权, 2:前复权, 3:不复权)
+                update_time TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, date, time, adjustflag)
             )
         """)
@@ -274,6 +285,7 @@ class DBManager:
                 volume      REAL,            -- 成交量 (单位:股)
                 amount      REAL,            -- 成交额 (单位:人民币元)
                 pct_chg     REAL,            -- 涨跌幅(百分比)
+                update_time TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, date)
             )
         """)
@@ -294,6 +306,7 @@ class DBManager:
                 adjustflag  INTEGER,         -- 复权状态 (1:后复权, 2:前复权, 3:不复权)
                 turn        REAL,            -- 换手率 (精度:小数点后6位;单位:%)
                 pct_chg     REAL,            -- 涨跌幅(百分比) (精度:小数点后6位)
+                update_time TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, date, adjustflag)
             )
         """)
@@ -313,6 +326,7 @@ class DBManager:
                 adjustflag  INTEGER,         -- 复权状态 (1:后复权, 2:前复权, 3:不复权)
                 turn        REAL,            -- 换手率 (精度:小数点后6位;单位:%)
                 pct_chg     REAL,            -- 涨跌幅(百分比) (精度:小数点后6位)
+                update_time TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, date, adjustflag)
             )
         """)
@@ -337,6 +351,7 @@ class DBManager:
                 divid_reserve_to_stock_ps REAL,           -- 每股转增资本
                 year                     INTEGER,         -- 年份
                 year_type                TEXT,            -- 年份类别 (report:预案公告年份, operate:除权除息年份)
+                update_time              TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, divid_operate_date, year_type)
             )
         """)
@@ -350,6 +365,7 @@ class DBManager:
                 fore_adjust_factor  REAL,            -- 向前复权因子 (除权除息日前一个交易日收盘价/除权除息日最近交易日前收盘价)
                 back_adjust_factor  REAL,            -- 向后复权因子 (除权除息日最近交易日前收盘价/除权除息日前一个交易日收盘价)
                 adjust_factor       REAL,            -- 本次复权因子
+                update_time         TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, divid_operate_date)
             )
         """)
@@ -371,6 +387,7 @@ class DBManager:
                 liqa_share  REAL,            -- 流通股本
                 year        INTEGER,         -- 统计年份
                 quarter     INTEGER,         -- 统计季度 (1-4)
+                update_time TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, year, quarter)
             )
         """)
@@ -390,6 +407,7 @@ class DBManager:
                 asset_turn_ratio REAL,            -- 总资产周转率 = 营业总收入/[(期初资产总额+期末)/2]
                 year             INTEGER,         -- 统计年份
                 quarter          INTEGER,         -- 统计季度 (1-4)
+                update_time      TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, year, quarter)
             )
         """)
@@ -408,6 +426,7 @@ class DBManager:
                 yoy_pni        REAL,            -- 归属母公司股东净利润同比增长率 (%)
                 year           INTEGER,         -- 统计年份
                 quarter        INTEGER,         -- 统计季度 (1-4)
+                update_time    TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, year, quarter)
             )
         """)
@@ -427,6 +446,7 @@ class DBManager:
                 asset_to_equity    REAL,            -- 权益乘数 = 资产总额/股东权益总额 = 1/(1-资产负债率)
                 year               INTEGER,         -- 统计年份
                 quarter            INTEGER,         -- 统计季度 (1-4)
+                update_time        TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, year, quarter)
             )
         """)
@@ -447,6 +467,7 @@ class DBManager:
                 cfo_to_gr             REAL,            -- 经营性现金净流量/营业总收入
                 year                  INTEGER,         -- 统计年份
                 quarter               INTEGER,         -- 统计季度 (1-4)
+                update_time           TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, year, quarter)
             )
         """)
@@ -468,6 +489,7 @@ class DBManager:
                 dupont_ebit_to_gr      REAL,            -- 息税前利润/营业总收入 (反映企业经营利润率)
                 year                   INTEGER,         -- 统计年份
                 quarter                INTEGER,         -- 统计季度 (1-4)
+                update_time            TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, year, quarter)
             )
         """)
@@ -487,6 +509,7 @@ class DBManager:
                 eps_diluted                 REAL,            -- 业绩快报每股收益EPS-摊薄
                 gr_yoy                      REAL,            -- 业绩快报营业总收入同比
                 op_yoy                      REAL,            -- 业绩快报营业利润同比
+                update_time                 TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, performance_exp_pub_date)
             )
         """)
@@ -502,6 +525,7 @@ class DBManager:
                 profit_forecast_abstract      TEXT,           -- 业绩预告摘要
                 profit_forecast_chg_pct_up    REAL,           -- 预告归属于母公司净利润增长上限(%)
                 profit_forecast_chg_pct_down  REAL,           -- 预告归属于母公司净利润增长下限(%)
+                update_time                   TEXT,           -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, profit_forecast_exp_pub_date)
             )
         """)
@@ -513,6 +537,7 @@ class DBManager:
                 update_date TEXT,            -- 更新日期
                 code        TEXT NOT NULL,   -- 证券代码
                 code_name   TEXT,            -- 证券名称
+                update_time TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, update_date)
             )
         """)
@@ -524,6 +549,7 @@ class DBManager:
                 update_date TEXT,            -- 更新日期
                 code        TEXT NOT NULL,   -- 证券代码
                 code_name   TEXT,            -- 证券名称
+                update_time TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, update_date)
             )
         """)
@@ -535,6 +561,7 @@ class DBManager:
                 update_date TEXT,            -- 更新日期
                 code        TEXT NOT NULL,   -- 证券代码
                 code_name   TEXT,            -- 证券名称
+                update_time TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (code, update_date)
             )
         """)
@@ -553,7 +580,8 @@ class DBManager:
                 fixed_deposit_rate_5_year     REAL,               -- 定期存款整存整取(五年)
                 installment_fixed_rate_1_year REAL,               -- 零存整取/整存零取/存本取息(一年)
                 installment_fixed_rate_3_year REAL,               -- 零存整取/整存零取/存本取息(三年)
-                installment_fixed_rate_5_year REAL                -- 零存整取/整存零取/存本取息(五年)
+                installment_fixed_rate_5_year REAL,               -- 零存整取/整存零取/存本取息(五年)
+                update_time                   TEXT                -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
             )
         """)
 
@@ -568,7 +596,8 @@ class DBManager:
                 loan_rate_3y_to_5y     REAL,               -- 3年至5年贷款利率
                 loan_rate_above_5y     REAL,               -- 5年以上贷款利率
                 mortgage_rate_below_5y REAL,               -- 5年以下住房公积金贷款利率
-                mortgage_rate_above_5y REAL                -- 5年以上住房公积金贷款利率
+                mortgage_rate_above_5y REAL,               -- 5年以上住房公积金贷款利率
+                update_time            TEXT                -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
             )
         """)
 
@@ -581,7 +610,8 @@ class DBManager:
                 big_institutions_ratio_pre  REAL,               -- 大型存款类金融机构-调整前
                 big_institutions_ratio_after REAL,              -- 大型存款类金融机构-调整后
                 medium_institutions_ratio_pre REAL,             -- 中小型存款类金融机构-调整前
-                medium_institutions_ratio_after REAL            -- 中小型存款类金融机构-调整后
+                medium_institutions_ratio_after REAL,           -- 中小型存款类金融机构-调整后
+                update_time                 TEXT                -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
             )
         """)
 
@@ -600,6 +630,7 @@ class DBManager:
                 m2_month   REAL,               -- 货币供应量M2(月)
                 m2_yoy     REAL,               -- 货币供应量M2(同比)
                 m2_chain   REAL,               -- 货币供应量M2(环比)
+                update_time TEXT,              -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
                 PRIMARY KEY (stat_year, stat_month)
             )
         """)
@@ -614,7 +645,8 @@ class DBManager:
                 m1_year     REAL,                  -- 货币供应量M1(年底余额, 亿元)
                 m1_year_yoy REAL,                  -- 货币供应量M1(同比)
                 m2_year     REAL,                  -- 货币供应量M2(年底余额, 亿元)
-                m2_year_yoy REAL                   -- 货币供应量M2(同比)
+                m2_year_yoy REAL,                  -- 货币供应量M2(同比)
+                update_time TEXT                   -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
             )
         """)
 
@@ -622,8 +654,9 @@ class DBManager:
         """API 请求每日计数"""
         conn.execute("""
             CREATE TABLE IF NOT EXISTS request_count (
-                date    TEXT PRIMARY KEY,           -- 日期 (YYYY-MM-DD，唯一)
-                count   INTEGER NOT NULL DEFAULT 0  -- 当日请求次数
+                date        TEXT PRIMARY KEY,           -- 日期 (YYYY-MM-DD，唯一)
+                count       INTEGER NOT NULL DEFAULT 0, -- 当日请求次数
+                update_time TEXT                        -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
             )
         """)
 
@@ -654,6 +687,8 @@ class DBManager:
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()
         }
+
+        self._add_update_time_to_tables(conn, tables)
 
         if "dividend" in tables:
             cols = {
@@ -689,6 +724,32 @@ class DBManager:
             self._create_request_count(conn)
 
         conn.commit()
+
+    def _add_update_time_to_tables(self, conn: sqlite3.Connection, tables: set[str]) -> None:
+        all_tables = [
+            "trade_dates", "stock_basic", "stock_industry", "all_stock",
+            "all_stock_daily", "all_stock_weekly", "all_stock_monthly",
+            "all_stock_5min", "all_stock_15min", "all_stock_30min", "all_stock_60min",
+            "index_daily", "index_weekly", "index_monthly",
+            "dividend", "adjust_factor",
+            "profit_data", "operation_data", "growth_data",
+            "balance_data", "cash_flow_data", "dupont_data",
+            "performance_express", "forecast_report",
+            "sz50_stocks", "hs300_stocks", "zz500_stocks",
+            "deposit_rate", "loan_rate", "reserve_ratio",
+            "money_supply_month", "money_supply_year", "request_count",
+        ]
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for table in all_tables:
+            if table not in tables:
+                continue
+            cols = {
+                r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            if "update_time" not in cols:
+                conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN update_time TEXT DEFAULT '{now}'"
+                )
 
     def _migrate_dividend_pk(self, conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE dividend RENAME TO dividend_old")

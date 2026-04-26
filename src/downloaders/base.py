@@ -5,6 +5,7 @@ import time
 import signal
 import logging
 import json
+from datetime import datetime
 from pathlib import Path
 
 from src.config_loader import get_socket_timeout, get_daily_request_limit
@@ -208,6 +209,9 @@ class BaseDownloader:
     def save_df(self, df: pd.DataFrame, table: str, if_exists: str = "append"):
         if df.empty:
             return
+        if "update_time" not in df.columns:
+            df = df.copy()
+            df["update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if if_exists == "upsert":
             tmp = f"{table}_tmp"
             df.to_sql(tmp, self.conn, if_exists="replace", index=False)
