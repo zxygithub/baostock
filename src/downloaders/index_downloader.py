@@ -19,6 +19,7 @@ class IndexDownloader(BaseDownloader):
         self,
         codes: list[str] | None = None,
         start_date: str | None = None,
+        end_date: str | None = None,
     ) -> int:
         if codes is None:
             codes = INDEX_CODES
@@ -33,7 +34,7 @@ class IndexDownloader(BaseDownloader):
                 code=code,
                 fields=INDEX_DAILY_FIELDS,
                 start_date=start_date,
-                end_date=None,
+                end_date=end_date,
                 frequency="d",
             )
             rows = fetch_all_rows(rs)
@@ -50,6 +51,7 @@ class IndexDownloader(BaseDownloader):
         self,
         codes: list[str] | None = None,
         start_date: str | None = None,
+        end_date: str | None = None,
     ) -> int:
         if codes is None:
             codes = INDEX_CODES
@@ -64,7 +66,7 @@ class IndexDownloader(BaseDownloader):
                 code=code,
                 fields=INDEX_WEEKLY_MONTHLY_FIELDS,
                 start_date=start_date,
-                end_date=None,
+                end_date=end_date,
                 frequency="w",
             )
             rows = fetch_all_rows(rs)
@@ -81,6 +83,7 @@ class IndexDownloader(BaseDownloader):
         self,
         codes: list[str] | None = None,
         start_date: str | None = None,
+        end_date: str | None = None,
     ) -> int:
         if codes is None:
             codes = INDEX_CODES
@@ -95,7 +98,7 @@ class IndexDownloader(BaseDownloader):
                 code=code,
                 fields=INDEX_WEEKLY_MONTHLY_FIELDS,
                 start_date=start_date,
-                end_date=None,
+                end_date=end_date,
                 frequency="m",
             )
             rows = fetch_all_rows(rs)
@@ -112,9 +115,10 @@ class IndexDownloader(BaseDownloader):
         self,
         codes: list[str] | None = None,
         start_date: str | None = None,
+        end_date: str | None = None,
     ) -> dict[str, int]:
         return {
-            "index_daily": self.download_index_daily(codes, start_date),
-            "index_weekly": self.download_index_weekly(codes, start_date),
-            "index_monthly": self.download_index_monthly(codes, start_date),
+            "index_daily": self.download_index_daily(codes, start_date, end_date),
+            "index_weekly": self.download_index_weekly(codes, start_date, end_date),
+            "index_monthly": self.download_index_monthly(codes, start_date, end_date),
         }
