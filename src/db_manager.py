@@ -679,6 +679,18 @@ class DBManager:
             return row[0] == "1"
         return False
 
+    def get_latest_trading_day_on_or_before(self, date_str: str) -> str | None:
+        """Find the most recent trading day on or before the given date."""
+        conn = self.get_connection()
+        cursor = conn.execute(
+            "SELECT calendar_date FROM trade_dates "
+            "WHERE calendar_date <= ? AND is_trading_day = 1 "
+            "ORDER BY calendar_date DESC LIMIT 1",
+            (date_str,)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+
     def migrate_schema(self) -> None:
         conn = self.get_connection()
         tables = {

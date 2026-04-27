@@ -53,27 +53,31 @@ def main():
         dl.download_trade_dates()
         dl.download_stock_industry()
 
-    # Check if today is a trading day
-    today = datetime.now().strftime("%Y-%m-%d")
-    is_trading = db.is_trading_day(today)
-    if not is_trading:
-        logger.info(f"Today ({today}) is not a trading day. Skipping K-line update.")
-    else:
-        logger.info(f"Today ({today}) is a trading day. Proceeding with K-line update.")
+    # 程序在凌晨运行，目标是更新截止到前一天的数据
+    # 例如：26日凌晨0:05运行 → 更新截止到25日(含)的数据
+    # 若25日非交易日，则追溯到最近的交易日（如周五）
+    target_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    kline_end_date = db.get_latest_trading_day_on_or_before(target_date)
 
-        if datetime.now().weekday() == 0:
+    if kline_end_date and kline_end_date >= start_date:
+        logger.info(f"Latest trading day on or before {target_date}: {kline_end_date}. Proceeding with K-line update.")
+
+        # 周一更新指数成分股（基于 target_date 判断）
+        if datetime.strptime(target_date, "%Y-%m-%d").weekday() == 0:
             with ComponentDownloader(str(DB_PATH), logger) as dl:
                 dl.download_all_components()
 
         logger.info("Updating index K-line...")
         with IndexDownloader(str(DB_PATH), logger) as dl:
-            dl.download_index_daily(start_date=index_start)
-            dl.download_index_weekly(start_date=index_start)
-            dl.download_index_monthly(start_date=index_start)
+            dl.download_index_daily(start_date=index_start, end_date=kline_end_date)
+            dl.download_index_weekly(start_date=index_start, end_date=kline_end_date)
+            dl.download_index_monthly(start_date=index_start, end_date=kline_end_date)
 
         logger.info("Updating stock daily K-line...")
         with KlineDownloader(str(DB_PATH), logger) as dl:
-            dl.download_daily_kline(codes, start_date=start_date)
+            dl.download_daily_kline(codes, start_date=start_date, end_date=kline_end_date)
+    else:
+        logger.info(f"No new trading data found on or before {target_date}. Skipping K-line update.")
 
     current_year, current_quarter = get_current_quarter()
     logger.info(f"Updating financial data for {current_year} Q{current_quarter}...")

@@ -76,20 +76,23 @@ def main():
 
     logger.info("=== BaoStock Full Data Download ===")
 
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     with DBManager(str(DB_PATH)) as db:
         db.init_all_tables()
         db.migrate_schema()
 
-        today = datetime.now().strftime("%Y-%m-%d")
-        is_trading = db.is_trading_day(today)
+        # 程序在凌晨运行，目标是拉取截止到前一天的完整数据
+        # 例如：26日凌晨0:05运行 → 拉取截止到25日(含)的数据
+        # 若25日非交易日，则追溯到最近的交易日（如周五）
+        target_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        kline_end_date = db.get_latest_trading_day_on_or_before(target_date)
     logger.info("Database initialized.")
 
-    if is_trading:
-        logger.info(f"Today ({today}) is a trading day. Proceeding with K-line download.")
+    if kline_end_date:
+        logger.info(f"Latest trading day on or before {target_date}: {kline_end_date}. Proceeding with K-line download.")
     else:
-        logger.info(f"Today ({today}) is not a trading day. Skipping K-line download.")
+        logger.info(f"No trading day found on or before {target_date}. Skipping K-line download.")
 
     logger.info("Phase 2: Downloading metadata...")
     with MetaDownloader(str(DB_PATH), logger) as dl:
@@ -109,12 +112,13 @@ def main():
         comp_results = dl.download_all_components()
     logger.info(f"Components: {comp_results}")
 
-    if is_trading:
+    if kline_end_date:
         if is_download_enabled("index_kline"):
             logger.info("Phase 6: Downloading index K-line...")
             with IndexDownloader(str(DB_PATH), logger) as dl:
                 idx_results = dl.download_all_index(
-                    start_date=args.start_date or get_index_kline_start_date()
+                    start_date=args.start_date or get_index_kline_start_date(),
+                    end_date=args.end_date or kline_end_date,
                 )
             logger.info(f"Index K-line: {idx_results}")
 
@@ -128,15 +132,17 @@ def main():
                 kline_results["daily"] = dl.download_daily_kline(
                     codes,
                     start_date=args.start_date or get_kline_start_date("daily"),
-                    end_date=args.end_date,
+                    end_date=args.end_date or kline_end_date,
                 )
                 if not dl._interrupted:
                     kline_results["weekly"] = dl.download_weekly_kline(
-                        codes, start_date=args.start_date or get_kline_start_date("weekly")
+                        codes, start_date=args.start_date or get_kline_start_date("weekly"),
+                        end_date=args.end_date or kline_end_date,
                     )
                 if not dl._interrupted:
                     kline_results["monthly"] = dl.download_monthly_kline(
-                        codes, start_date=args.start_date or get_kline_start_date("monthly")
+                        codes, start_date=args.start_date or get_kline_start_date("monthly"),
+                        end_date=args.end_date or kline_end_date,
                     )
                 if not dl._interrupted:
                     dl.clear_checkpoint(ckpt_path)
@@ -150,10 +156,11 @@ def main():
                             codes,
                             frequency=freq,
                             start_date=args.start_date or get_kline_start_date("minute"),
+                            end_date=args.end_date or kline_end_date,
                         )
                         logger.info(f"  {freq}min: {count} rows")
     else:
-        logger.info("Skipping Phase 6-8 (K-line) due to non-trading day.")
+        logger.info("Skipping Phase 6-8 (K-line) due to no trading day found.")
 
     if not args.skip_financial and is_download_enabled("financial"):
         logger.info("Phase 9: Downloading financial data...")
@@ -168,7 +175,7 @@ def main():
             report_results = dl.download_all_reports(
                 codes,
                 start_date=args.start_date or get_reports_start_date(),
-                end_date=args.end_date,
+                end_date=args.end_date or kline_end_date,
             )
         logger.info(f"Reports: {report_results}")
 

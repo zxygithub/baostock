@@ -140,21 +140,26 @@ class KlineDownloader(BaseDownloader):
         self,
         codes: list[str],
         start_date: str | None = None,
+        end_date: str | None = None,
     ) -> int:
         if start_date is None:
             start_date = get_kline_start_date("weekly")
         total_rows = 0
         for adjustflag in [1, 2, 3]:
             self.logger.info(f"Downloading weekly K-line (adjustflag={adjustflag})...")
+            resume = self._get_resume_code("all_stock_weekly", adjustflag, codes)
             count = self._download_kline_batch(
                 codes,
                 start_date,
-                None,
+                end_date,
                 "w",
                 WEEKLY_MONTHLY_KLINE_FIELDS,
                 "all_stock_weekly",
                 adjustflag,
+                resume,
             )
+            if self._interrupted:
+                break
             self.logger.info(f"Weekly K-line (adj={adjustflag}): {count} rows")
             total_rows += count
         return total_rows
@@ -163,21 +168,26 @@ class KlineDownloader(BaseDownloader):
         self,
         codes: list[str],
         start_date: str | None = None,
+        end_date: str | None = None,
     ) -> int:
         if start_date is None:
             start_date = get_kline_start_date("monthly")
         total_rows = 0
         for adjustflag in [1, 2, 3]:
             self.logger.info(f"Downloading monthly K-line (adjustflag={adjustflag})...")
+            resume = self._get_resume_code("all_stock_monthly", adjustflag, codes)
             count = self._download_kline_batch(
                 codes,
                 start_date,
-                None,
+                end_date,
                 "m",
                 WEEKLY_MONTHLY_KLINE_FIELDS,
                 "all_stock_monthly",
                 adjustflag,
+                resume,
             )
+            if self._interrupted:
+                break
             self.logger.info(f"Monthly K-line (adj={adjustflag}): {count} rows")
             total_rows += count
         return total_rows
@@ -221,8 +231,8 @@ class KlineDownloader(BaseDownloader):
         results["all_stock_daily"] = self.download_daily_kline(
             codes, start_date, end_date
         )
-        results["all_stock_weekly"] = self.download_weekly_kline(codes, start_date)
-        results["all_stock_monthly"] = self.download_monthly_kline(codes, start_date)
+        results["all_stock_weekly"] = self.download_weekly_kline(codes, start_date, end_date)
+        results["all_stock_monthly"] = self.download_monthly_kline(codes, start_date, end_date)
 
         for freq in ["5", "15", "30", "60"]:
             results[f"all_stock_{freq}min"] = self.download_minute_kline(
