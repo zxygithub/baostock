@@ -20,8 +20,13 @@ FINANCIAL_START_YEAR = 2007
 REPORT_START_DATE = "2003-01-01"
 DIVIDEND_START_YEAR = 2007
 MINUTE_DATA_START = "2019-01-02"
-MINUTE_BARS_PER_DAY = 48
-MINUTE_FREQUENCIES = 4
+# Bars per trading day per frequency (A-share market: 9:30-11:30, 13:00-15:00 = 240 minutes)
+MINUTE_BARS_PER_DAY = {
+    "5": 48,   # 240 / 5
+    "15": 16,  # 240 / 15
+    "30": 8,   # 240 / 30
+    "60": 4,   # 240 / 60
+}
 INDEX_COUNT = 8
 ADJUST_FLAGS = 3
 FINANCIAL_TABLES = [
@@ -166,7 +171,7 @@ def estimate_index(trading_days: list[str]) -> dict[str, int]:
 
 def estimate_minute_kline(stocks: list[dict], trading_days: list[str]) -> dict[str, int]:
     recent_days = count_trading_days(trading_days, MINUTE_DATA_START, None)
-    total = 0
+    result = {}
 
     for stock in stocks:
         ipo = stock["ipo_date"]
@@ -181,15 +186,10 @@ def estimate_minute_kline(stocks: list[dict], trading_days: list[str]) -> dict[s
             count_trading_days(trading_days, effective_start, stock["out_date"]),
             recent_days,
         )
-        total += stock_days * MINUTE_BARS_PER_DAY * MINUTE_FREQUENCIES
+        for freq, bars_per_day in MINUTE_BARS_PER_DAY.items():
+            result[f"all_stock_{freq}min"] = result.get(f"all_stock_{freq}min", 0) + stock_days * bars_per_day
 
-    per_freq = total // MINUTE_FREQUENCIES
-    return {
-        "all_stock_5min": per_freq,
-        "all_stock_15min": per_freq,
-        "all_stock_30min": per_freq,
-        "all_stock_60min": per_freq,
-    }
+    return result
 
 
 def estimate_macro() -> dict[str, int]:

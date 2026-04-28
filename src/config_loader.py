@@ -17,6 +17,9 @@ logger = logging.getLogger("baostock")
 # Default config path
 DEFAULT_CONFIG_PATH: Path = Path(__file__).parent.parent / "config.yaml"
 
+# Module-level config cache to avoid repeated file I/O
+_config_cache: dict[str, Any] | None = None
+
 
 def load_config(config_path: Path | None = None) -> dict[str, Any]:
     """Load configuration from config.yaml file.
@@ -27,6 +30,10 @@ def load_config(config_path: Path | None = None) -> dict[str, Any]:
     Returns:
         Configuration dictionary. Returns empty dict if file doesn't exist.
     """
+    global _config_cache
+    if _config_cache is not None:
+        return _config_cache
+
     path = config_path or DEFAULT_CONFIG_PATH
     if not path.exists():
         logger.warning(f"Config file not found at {path}, using defaults")
@@ -35,7 +42,8 @@ def load_config(config_path: Path | None = None) -> dict[str, Any]:
     try:
         with open(path) as f:
             config = yaml.safe_load(f)
-            return config if config else {}
+            _config_cache = config if config else {}
+            return _config_cache
     except Exception as e:
         logger.error(f"Failed to load config from {path}: {e}")
         return {}

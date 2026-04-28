@@ -175,7 +175,7 @@ def main():
             report_results = dl.download_all_reports(
                 codes,
                 start_date=args.start_date or get_reports_start_date(),
-                end_date=args.end_date or kline_end_date,
+                end_date=args.end_date or (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"),
             )
         logger.info(f"Reports: {report_results}")
 

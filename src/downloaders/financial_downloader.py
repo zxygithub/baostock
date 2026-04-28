@@ -30,7 +30,6 @@ class FinancialDownloader(BaseDownloader):
 
         existing = self._get_existing_quarters(table_name)
         total_rows = 0
-        all_dfs: list[pd.DataFrame] = []
         current_year, current_quarter = get_current_quarter()
 
         tasks = []
@@ -82,7 +81,6 @@ class FinancialDownloader(BaseDownloader):
             df.rename(columns=column_renames, inplace=True)
             df["year"] = year
             df["quarter"] = quarter
-            all_dfs.append(df)
             batch_dfs.append(df)
             total_rows += len(df)
             time.sleep(FINANCIAL_SLEEP)

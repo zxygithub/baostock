@@ -75,20 +75,14 @@ def get_email_config(cfg):
 # ---------------------------------------------------------------------------
 def get_db_stats():
     conn = sqlite3.connect(str(DB_PATH))
-    
-    # Request count
+
     today = date.today().isoformat()
     cursor = conn.execute("SELECT count FROM request_count WHERE date = ?", (today,))
     row = cursor.fetchone()
     today_requests = row[0] if row else 0
-    
-    # Active stocks & trading days
-    active_stocks = conn.execute("SELECT COUNT(*) FROM stock_basic WHERE type = 1 AND status = 1").fetchone()[0]
-    trading_days = conn.execute("SELECT COUNT(*) FROM trade_dates WHERE is_trading_day = 1").fetchone()[0]
-    current_year = datetime.now().year
-    financial_years = current_year - 2007 + 1
-    
-    # Table row counts
+
+    total_requests = conn.execute("SELECT COALESCE(SUM(count), 0) FROM request_count").fetchone()[0]
+
     tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").fetchall()
     counts = {}
     for (t,) in tables:
@@ -96,9 +90,8 @@ def get_db_stats():
             counts[t] = conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
         except:
             counts[t] = 0
-            
-    conn.close()
-    return today_requests, active_stocks, trading_days, financial_years, counts
+
+    return conn, today_requests, total_requests, counts
 
 # ---------------------------------------------------------------------------
 # Log Parsing
@@ -159,55 +152,189 @@ def check_blacklist_status():
 # ---------------------------------------------------------------------------
 # Estimate & Progress Calculation
 # ---------------------------------------------------------------------------
-def get_progress_table(active_stocks, trading_days, financial_years, counts):
-    estimates = {
-        "all_stock_daily": active_stocks * trading_days * 3,
-        "all_stock_weekly": active_stocks * (trading_days // 5) * 3,
-        "all_stock_monthly": active_stocks * (financial_years * 12) * 3,
-        "profit_data": active_stocks * financial_years * 4,
-        "operation_data": active_stocks * financial_years * 4,
-        "growth_data": active_stocks * financial_years * 4,
-        "balance_data": active_stocks * financial_years * 4,
-        "cash_flow_data": active_stocks * financial_years * 4,
-        "dupont_data": active_stocks * financial_years * 4,
-        "dividend": active_stocks * financial_years * 2,
-        "performance_express": active_stocks * financial_years // 2,
-        "forecast_report": active_stocks * financial_years // 2,
-        "index_daily": 8 * trading_days,
-        "index_weekly": 8 * (trading_days // 5),
-        "index_monthly": 8 * (financial_years * 12),
-        "stock_basic": 9000,
-        "trade_dates": 13000,
-        "stock_industry": 6000,
-        "deposit_rate": 30,
-        "loan_rate": 30,
-        "reserve_ratio": 50,
-        "money_supply_month": 320,
-        "money_supply_year": 30,
+def count_trading_days_in_range(trading_days, start, end=None):
+    count = 0
+    for d in trading_days:
+        if d < start:
+            continue
+        if end and d > end:
+            break
+        count += 1
+    return count
+
+
+def get_precise_estimates(conn, counts):
+    stocks = conn.execute(
+        "SELECT code, ipo_date, out_date FROM stock_basic WHERE type = 1"
+    ).fetchall()
+
+    trading_days = conn.execute(
+        "SELECT calendar_date FROM trade_dates WHERE is_trading_day = 1 ORDER BY calendar_date"
+    ).fetchall()
+    trading_days = [r[0] for r in trading_days]
+
+    current_year = datetime.now().year
+    total_trading_days = len(trading_days)
+
+    est = {}
+
+    total_daily = 0
+    total_weekly = 0
+    total_monthly = 0
+    fin_totals = {t: 0 for t in ["profit_data", "operation_data", "growth_data",
+                                   "balance_data", "cash_flow_data", "dupont_data"]}
+    div_total = 0
+    express_total = 0
+    forecast_total = 0
+
+    for code, ipo, out in stocks:
+        if not ipo:
+            continue
+        try:
+            ipo_year = int(ipo[:4])
+        except (ValueError, IndexError):
+            ipo_year = 2007
+
+        days = count_trading_days_in_range(trading_days, ipo, out)
+        total_daily += days * 3
+        total_weekly += (days // 5) * 3
+        total_monthly += (days // 21) * 3
+
+        fin_start = max(2007, ipo_year)
+        fin_years = current_year - fin_start + 1
+        if fin_years > 0:
+            quarters = fin_years * 4
+            for t in fin_totals:
+                fin_totals[t] += quarters
+
+        div_start = max(2007, ipo_year)
+        div_years = current_year - div_start + 1
+        if div_years > 0:
+            div_total += int(div_years * 0.6)
+
+        rpt_start = max(2003, ipo_year)
+        rpt_years = current_year - rpt_start + 1
+        if rpt_years > 0:
+            express_total += rpt_years
+            forecast_total += rpt_years
+
+    est["all_stock_daily"] = total_daily
+    est["all_stock_weekly"] = total_weekly
+    est["all_stock_monthly"] = total_monthly
+    est.update(fin_totals)
+    est["dividend"] = div_total
+    est["adjust_factor"] = div_total
+    est["performance_express"] = express_total
+    est["forecast_report"] = forecast_total
+
+    est["index_daily"] = 8 * total_trading_days
+    est["index_weekly"] = 8 * (total_trading_days // 5) * 3
+    est["index_monthly"] = 8 * (total_trading_days // 21) * 3
+
+    est["stock_basic"] = counts.get("stock_basic", 0) or 9000
+    est["trade_dates"] = counts.get("trade_dates", 0) or 13000
+    est["stock_industry"] = counts.get("stock_industry", 0) or 6000
+    est["sz50_stocks"] = counts.get("sz50_stocks", 0) or 50
+    est["hs300_stocks"] = counts.get("hs300_stocks", 0) or 300
+    est["zz500_stocks"] = counts.get("zz500_stocks", 0) or 500
+    est["deposit_rate"] = 30
+    est["loan_rate"] = 30
+    est["reserve_ratio"] = 50
+    est["money_supply_month"] = 320
+    est["money_supply_year"] = 30
+
+    return est
+
+
+def get_api_request_estimates(conn):
+    stocks = conn.execute(
+        "SELECT code, ipo_date, out_date FROM stock_basic WHERE type = 1"
+    ).fetchall()
+    stock_count = len(stocks)
+    current_year = datetime.now().year
+
+    kline_req = stock_count * 3 * 3
+    fin_req = 0
+    for code, ipo, out in stocks:
+        if not ipo:
+            continue
+        try:
+            ipo_year = int(ipo[:4])
+        except (ValueError, IndexError):
+            ipo_year = 2007
+        fin_start = max(2007, ipo_year)
+        years = current_year - fin_start + 1
+        if years > 0:
+            fin_req += years * 4 * 6
+
+    report_req = 0
+    for code, ipo, out in stocks:
+        if not ipo:
+            continue
+        try:
+            ipo_year = int(ipo[:4])
+        except (ValueError, IndexError):
+            ipo_year = 2003
+        rpt_start = max(2003, ipo_year)
+        years = current_year - rpt_start + 1
+        if years > 0:
+            report_req += years * 2
+
+    div_req = stock_count
+    index_req = 8 * 3 * 3
+    macro_req = 5
+    meta_req = 4
+
+    total = kline_req + fin_req + report_req + div_req + index_req + macro_req + meta_req
+    daily_limit = conn.execute("SELECT count FROM request_count WHERE date = date('now')").fetchone()
+    today_count = daily_limit[0] if daily_limit else 0
+
+    DAILY_REQUEST_LIMIT = 49000
+
+    return {
+        "kline": kline_req,
+        "financial": fin_req,
+        "reports": report_req,
+        "dividend": div_req,
+        "index": index_req,
+        "macro": macro_req,
+        "meta": meta_req,
+        "total": total,
+        "daily_limit": DAILY_REQUEST_LIMIT,
+        "today_count": today_count,
+        "days_remaining": round(total / DAILY_REQUEST_LIMIT, 1) if total > 0 else 0,
     }
-    
+
+
+def get_progress_table(conn, counts):
+    estimates = get_precise_estimates(conn, counts)
+    api_req = get_api_request_estimates(conn)
+
     categories = {
-        "K线数据": ["all_stock_daily", "all_stock_weekly", "all_stock_monthly"],
-        "财务数据": ["profit_data", "operation_data", "growth_data", "balance_data", "cash_flow_data", "dupont_data"],
-        "分红与报告": ["dividend", "performance_express", "forecast_report"],
-        "指数数据": ["index_daily", "index_weekly", "index_monthly"],
-        "元数据": ["stock_basic", "trade_dates", "stock_industry"],
-        "宏观数据": ["deposit_rate", "loan_rate", "reserve_ratio", "money_supply_month", "money_supply_year"],
+        "K线数据（日/周/月）": ["all_stock_daily", "all_stock_weekly", "all_stock_monthly"],
+        "财务数据（6类）": ["profit_data", "operation_data", "growth_data",
+                         "balance_data", "cash_flow_data", "dupont_data"],
+        "分红与报告": ["dividend", "adjust_factor", "performance_express", "forecast_report"],
+        "指数K线": ["index_daily", "index_weekly", "index_monthly"],
+        "元数据": ["stock_basic", "trade_dates", "stock_industry",
+                  "sz50_stocks", "hs300_stocks", "zz500_stocks"],
+        "宏观数据": ["deposit_rate", "loan_rate", "reserve_ratio",
+                    "money_supply_month", "money_supply_year"],
     }
-    
+
     rows_html = ""
     for cat, tables in categories.items():
         for i, table in enumerate(tables):
             est = estimates.get(table, 0)
             current = counts.get(table, 0)
             pct = (current / est * 100) if est > 0 else 0
-            
+
             if pct >= 100: status, icon = "100%", "✅ 完成"
             elif pct > 50: status, icon = f"{pct:.1f}%", "🟢 进行中"
             elif pct > 10: status, icon = f"{pct:.1f}%", "🟡 进度缓慢"
             elif pct > 0: status, icon = f"{pct:.1f}%", "🔴 几乎未开始"
             else: status, icon = "0%", "⚪ 未开始"
-            
+
             cat_label = cat if i == 0 else ""
             rows_html += f"""
             <tr>
@@ -218,23 +345,28 @@ def get_progress_table(active_stocks, trading_days, financial_years, counts):
                 <td>{status}</td>
                 <td>{icon}</td>
             </tr>"""
-            
-    return rows_html
+
+    return rows_html, api_req
 
 # ---------------------------------------------------------------------------
 # Email Generation & Sending
 # ---------------------------------------------------------------------------
-def build_email(sender, start_time, end_time, today_requests, blacklist_status, blacklist_detail, table_rows):
+def build_email(sender, start_time, end_time, today_requests, total_requests,
+                blacklist_status, blacklist_detail, table_rows, api_req):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"BaoStock 数据下载日报 ({date.today().strftime('%Y-%m-%d')})"
     msg["From"] = sender
-    
+
+    pct_used = (today_requests / api_req["daily_limit"] * 100) if api_req["daily_limit"] else 0
+    est_days = round(api_req["total"] / 49000, 1)
+
     html = f"""
     <html>
     <head>
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; color: #333; }}
             h2 {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
+            h3 {{ color: #2c3e50; margin-top: 25px; }}
             .summary {{ background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; }}
             .summary p {{ margin: 8px 0; font-size: 15px; }}
             .summary strong {{ color: #2980b9; }}
@@ -247,18 +379,33 @@ def build_email(sender, start_time, end_time, today_requests, blacklist_status, 
             .cat {{ font-weight: bold; color: #555; background: #f4f4f4; }}
             .num {{ text-align: right; font-family: monospace; }}
             tr:hover {{ background: #f9f9f9; }}
+            .api-summary {{ background: #eef7ff; padding: 15px; border-radius: 8px; margin: 20px 0; }}
+            .api-summary p {{ margin: 6px 0; font-size: 14px; }}
         </style>
     </head>
     <body>
         <h2>📊 BaoStock 数据下载状态日报</h2>
-        
+
         <div class="summary">
             <p><strong>🕒 最近一次拉取开始时间:</strong> {start_time}</p>
             <p><strong>🏁 最近一次拉取结束时间:</strong> {end_time}</p>
-            <p><strong>📈 今日已使用请求次数:</strong> {today_requests:,} 次</p>
+            <p><strong>📈 今日已使用请求次数:</strong> {today_requests:,} 次 ({pct_used:.0f}%)</p>
+            <p><strong>📊 累计总请求次数:</strong> {total_requests:,} 次</p>
             <p><strong>🛡️ 黑名单状态:</strong> <span class="{'status-ok' if '正常' in blacklist_status else 'status-error'}">{blacklist_status}</span> - {blacklist_detail}</p>
         </div>
-        
+
+        <div class="api-summary">
+            <h3 style="margin-top:0">🔢 API 请求估算（基于 IPO 日期精确计算）</h3>
+            <p><strong>K 线（日/周/月 × 3 复权）:</strong> {api_req["kline"]:,} 次</p>
+            <p><strong>财务数据（按 IPO 年份）:</strong> {api_req["financial"]:,} 次</p>
+            <p><strong>公司报告:</strong> {api_req["reports"]:,} 次</p>
+            <p><strong>分红数据:</strong> {api_req["dividend"]:,} 次</p>
+            <p><strong>指数 K 线:</strong> {api_req["index"]:,} 次</p>
+            <p><strong>宏观 + 元数据:</strong> {api_req["macro"] + api_req["meta"]:,} 次</p>
+            <p><strong>─────────────────────────────</strong></p>
+            <p><strong>总请求数:</strong> {api_req["total"]:,} 次 | <strong>按 49,000 次/天:</strong> 约 {est_days} 天</p>
+        </div>
+
         <h3>数据拉取情况综合评估表</h3>
         <table>
             <thead>
@@ -275,10 +422,10 @@ def build_email(sender, start_time, end_time, today_requests, blacklist_status, 
                 {table_rows}
             </tbody>
         </table>
-        
+
         <p style="margin-top: 30px; color: #7f8c8d; font-size: 12px;">
             此邮件由 BaoStock 自动报告系统生成。<br>
-            预估总量基于活跃股票数 × 交易日 × 复权类型动态计算。
+            预估总量基于每只股票的实际 IPO 日期和交易日历精确计算，非统一起始日期估算。
         </p>
     </body>
     </html>
@@ -317,17 +464,18 @@ def main():
     load_dotenv()
     cfg = load_config()
     email_cfg = get_email_config(cfg)
-    
-    today_requests, active_stocks, trading_days, fin_years, counts = get_db_stats()
+
+    conn, today_requests, total_requests, counts = get_db_stats()
     start_time, end_time = get_latest_download_times()
     blacklist_status, blacklist_detail = check_blacklist_status()
-    table_rows = get_progress_table(active_stocks, trading_days, fin_years, counts)
-    
+    table_rows, api_req = get_progress_table(conn, counts)
+
     msg = build_email(
-        email_cfg["sender"], start_time, end_time, today_requests,
-        blacklist_status, blacklist_detail, table_rows
+        email_cfg["sender"], start_time, end_time, today_requests, total_requests,
+        blacklist_status, blacklist_detail, table_rows, api_req
     )
     send_email(email_cfg, msg)
+    conn.close()
 
 if __name__ == "__main__":
     main()

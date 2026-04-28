@@ -57,21 +57,32 @@ class BaseDownloader:
         db.close()
 
     def _increment_request_count(self):
-        """Increment today's API request count by 1."""
-        from src.db_manager import DBManager
+        """Increment today's API request count by 1, using direct SQL (方案C).
 
-        db = DBManager(str(self.db_path))
-        db.migrate_schema()
-        new_count = db.increment_request_count(1)
+        Avoids DBManager/migrate_schema() overhead by executing raw SQL directly.
+        Uses INSERT ... ON CONFLICT DO UPDATE to atomically insert or increment.
+        """
+        from datetime import date
+
+        today = date.today().isoformat()
+        conn = sqlite3.connect(str(self.db_path))
+        conn.execute(
+            "INSERT INTO request_count (date, count) VALUES (?, 1) "
+            "ON CONFLICT(date) DO UPDATE SET count = count + 1",
+        )
+        conn.commit()
+        cursor = conn.execute("SELECT count FROM request_count WHERE date = ?", (today,))
+        row = cursor.fetchone()
+        new_count = row[0] if row else 0
+        conn.close()
+
         if new_count >= self.DAILY_REQUEST_LIMIT:
             self._limit_exceeded = True
             self.logger.error(
                 f"今日 API 请求已达上限 ({new_count}/{self.DAILY_REQUEST_LIMIT})，"
                 f"为避免进入黑名单，程序已退出。请明日再试。"
             )
-            db.close()
             raise SystemExit(1)
-        db.close()
 
     def _api_call(self, func, *args, **kwargs):
         """Wrapper for direct baostock API calls that increments request count."""

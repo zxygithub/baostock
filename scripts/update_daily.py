@@ -1,5 +1,6 @@
 import sys
 import argparse
+import sqlite3
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -41,12 +42,16 @@ def main():
     logger.info(f"Stock K-line from: {start_date}")
     logger.info(f"Index K-line from: {index_start}")
 
-    codes = db.get_downloaded_stocks("stock_basic")
+    conn = sqlite3.connect(str(DB_PATH))
+    rows = conn.execute(
+        "SELECT code FROM stock_basic WHERE type = 1 AND status = 1"
+    ).fetchall()
+    codes = sorted(row[0] for row in rows)
+    conn.close()
     if not codes:
         logger.error("No stock codes found. Run full download first.")
         return
 
-    codes = sorted(codes)
     logger.info(f"Updating {len(codes)} stocks...")
 
     with MetaDownloader(str(DB_PATH), logger) as dl:

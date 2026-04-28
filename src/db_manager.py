@@ -676,7 +676,7 @@ class DBManager:
         )
         row = cursor.fetchone()
         if row:
-            return row[0] == "1"
+            return row[0] == 1
         return False
 
     def get_latest_trading_day_on_or_before(self, date_str: str) -> str | None:
@@ -782,12 +782,14 @@ class DBManager:
         conn.execute("DROP TABLE money_supply_year_old")
 
     def _migrate_stock_industry(self, conn: sqlite3.Connection) -> None:
+        """Migrate stock_industry table from old schema to new schema.
+
+        Old schema had positional column names (0, 1, 2, 3, 4).
+        Since we cannot reliably map old columns to new ones, we recreate
+        the table and let the next download repopulate it.
+        """
         conn.execute("ALTER TABLE stock_industry RENAME TO stock_industry_old")
         self._create_stock_industry(conn)
-        conn.execute("""
-            INSERT INTO stock_industry (code, code_name, industry, industry_classification, update_date)
-            SELECT "1", "2", "3", "4", "0" FROM stock_industry_old
-        """)
         conn.execute("DROP TABLE stock_industry_old")
 
     def get_downloaded_stocks(self, table: str) -> set[str]:
@@ -811,14 +813,10 @@ class DBManager:
         today = date.today().isoformat()
         conn.execute(
             """
-            INSERT INTO request_count (date, count) VALUES (?, 0)
+            INSERT INTO request_count (date, count) VALUES (?, ?)
             ON CONFLICT(date) DO UPDATE SET count = count + excluded.count
             """,
-            (today,),
-        )
-        conn.execute(
-            "UPDATE request_count SET count = count + ? WHERE date = ?",
-            (n, today),
+            (today, n),
         )
         conn.commit()
         cursor = conn.execute(

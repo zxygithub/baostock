@@ -14,8 +14,10 @@ from src.config_loader import (
     get_batch_size,
     get_batch_sleep,
     get_kline_start_date,
+    get_nested_value,
+    get_download_config,
 )
-from src.utils.helpers import fetch_all_rows, batch_iterable
+from src.utils.helpers import fetch_all_rows, batch_iterable, convert_turn_field
 
 
 class KlineDownloader(BaseDownloader):
@@ -95,9 +97,7 @@ class KlineDownloader(BaseDownloader):
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors="coerce")
             if "turn" in df.columns:
-                df["turn"] = df["turn"].apply(
-                    lambda x: 0.0 if not x or str(x).strip() == "" else float(x)
-                )
+                df["turn"] = df["turn"].apply(convert_turn_field)
             for col in ["tradestatus", "is_st"]:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
@@ -202,7 +202,11 @@ class KlineDownloader(BaseDownloader):
             start_date = get_kline_start_date("minute")
         table_name = f"all_stock_{frequency}min"
         total_rows = 0
-        for adjustflag in [1, 2, 3]:
+        # BaoStock minute data only supports adjustflag=3 (no adjustment)
+        adjustflags = get_nested_value(
+            get_download_config(), ["kline", "minute", "adjustflags"], [3]
+        )
+        for adjustflag in adjustflags:
             self.logger.info(
                 f"Downloading {frequency}min K-line (adjustflag={adjustflag})..."
             )
