@@ -69,6 +69,7 @@ class BaseDownloader:
         conn.execute(
             "INSERT INTO request_count (date, count) VALUES (?, 1) "
             "ON CONFLICT(date) DO UPDATE SET count = count + 1",
+            (today,),
         )
         conn.commit()
         cursor = conn.execute("SELECT count FROM request_count WHERE date = ?", (today,))
