@@ -141,3 +141,6 @@ logs/
 # Test artifacts
 tests/test_codes.txt
 .vscode/PythonImportHelper-v2-Completion.json
+.qwen/settings.json
+.gitignore
+.qwen/settings.json.orig
