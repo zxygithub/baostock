@@ -751,7 +751,6 @@ class DBManager:
             "deposit_rate", "loan_rate", "reserve_ratio",
             "money_supply_month", "money_supply_year", "request_count",
         ]
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for table in all_tables:
             if table not in tables:
                 continue
@@ -760,7 +759,7 @@ class DBManager:
             }
             if "update_time" not in cols:
                 conn.execute(
-                    f"ALTER TABLE {table} ADD COLUMN update_time TEXT DEFAULT '{now}'"
+                    f"ALTER TABLE {table} ADD COLUMN update_time TEXT"
                 )
 
     def _migrate_dividend_pk(self, conn: sqlite3.Connection) -> None:
@@ -811,12 +810,13 @@ class DBManager:
         """增加今日 API 请求计数，返回新的计数值"""
         conn = self.get_connection()
         today = date.today().isoformat()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
             """
-            INSERT INTO request_count (date, count) VALUES (?, ?)
-            ON CONFLICT(date) DO UPDATE SET count = count + excluded.count
+            INSERT INTO request_count (date, count, update_time) VALUES (?, ?, ?)
+            ON CONFLICT(date) DO UPDATE SET count = count + excluded.count, update_time = excluded.update_time
             """,
-            (today, n),
+            (today, n, now),
         )
         conn.commit()
         cursor = conn.execute(
