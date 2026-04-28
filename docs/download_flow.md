@@ -14,7 +14,9 @@
 │  • DBManager.init_all_tables()  → 创建所有表             │
 │  • DBManager.migrate_schema()   → 迁移 schema            │
 │  • 计算 target_date = 昨天                               │
-│  • 查找 kline_end_date (最近交易日)                      │
+│  • 查找 kline_end_date =                                │
+│    get_latest_trading_day_on_or_before(target_date)      │
+│    （若昨天非交易日，追溯到最近交易日）                    │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
@@ -33,12 +35,14 @@
 ┌─────────────────────────────────────────────────────────┐
 │ 加载股票代码列表                                          │
 │  SELECT code FROM stock_basic WHERE type = 1            │
-│  → ~5,524 只股票                                         │
+│  → ~5,524 只股票（含退市）                               │
+│  注：--codes-file 可从 CSV/TXT 加载自定义列表            │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────┐
 │ Phase 4: 宏观经济数据 (MacroDownloader)                  │
+│  (可通过 --skip-macro 跳过)                              │
 │                                                         │
 │  1. deposit_rate          ← query_deposit_rate_data()    │
 │     ↓ sleep(2s)                                         │
@@ -65,96 +69,87 @@
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
-              ┌──── 查找最近的交易日 ────┐
-              │ target_date = 昨天       │
-              │ kline_end_date =         │
-              │  get_latest_trading_day_ │
-              │  on_or_before(target)    │
+              ┌──── 判断是否有交易日 ────┐
+              │ if kline_end_date:       │
+              │   → 继续 Phase 6-8       │
+              │ else:                    │
+              │   → 跳过 Phase 6-8       │
               └────────┬────────────────┘
                        │
-              ┌──── 找到交易日? ────┐
-              │                    │
-            是│                  否│
-              ▼                    ▼
-   ┌──────────────────┐   ┌──────────────────────────┐
-   │ Phase 6: 指数K线  │   │ 跳过 Phase 6-8           │
-   │ (IndexDownloader)│   │ (无交易日不拉K线)        │
-   │ end_date =       │   └──────────────────────────┘
-   │ kline_end_date   │
-   │ 8个指数 × 3频率  │
-   │ 日/周/月各1次    │
-   │ API: 24 次       │
-   └────────┬─────────┘
-            │
+              ┌──── 有交易日? ────┐
+              │                  │
+            否│                是│
+              ▼                  ▼
+   ┌──────────────────┐   ┌──────────────────────────────┐
+   │ 跳过 Phase 6-8   │   │ Phase 6: 指数K线              │
+   │ 直接去财务更新    │   │ (IndexDownloader)            │
+   │                  │   │ 8个指数 × 3频率 (日/周/月)    │
+   │                  │   │ start = 配置起始日期           │
+   │                  │   │ end   = kline_end_date         │
+   │                  │   │ API: ~24 次                   │
+   └──────────────────┘   └──────────────┬───────────────┘
+                                         │
+                                         ▼
+                                ┌────────────────────────┐
+                                │ Phase 7: 股票K线         │
+                                │ (KlineDownloader)       │
+                                │ end = kline_end_date    │
+                                │                         │
+                                │ ┌─ 日线 (adj=1,2,3) ─┐  │
+                                │ │ batch=200, sleep=2s│  │
+                                │ │ 断点续传 + 增量检查 │  │
+                                │ │ API: ~5,524 × 3    │  │
+                                │ └────────────────────┘  │
+                                │ ┌─ 周线 (adj=1,2,3) ─┐  │
+                                │ │ 同上               │  │
+                                │ │ API: ~5,524 × 3    │  │
+                                │ └────────────────────┘  │
+                                │ ┌─ 月线 (adj=1,2,3) ─┐  │
+                                │ │ 同上               │  │
+                                │ │ API: ~5,524 × 3    │  │
+                                │ └────────────────────┘  │
+                                │                         │
+                                │ 断点续传: SIGINT/SIGTERM│
+                                │   保存 checkpoint 文件   │
+                                │ 增量检查: per-code       │
+                                │   get_last_downloaded()  │
+                                └────────┬────────────────┘
+                                         │
+                                         ▼
+                                ┌────────────────────────┐
+                                │ Phase 8: 分钟K线         │
+                                │ (默认关闭)              │
+                                │ config: minute.enabled  │
+                                │ freq: 5/15/30/60        │
+                                │ adj: 仅不复权(adj=3)    │
+                                │ API: 5,524 × 4 × 1     │
+                                └────────┬────────────────┘
+                                         │
+            ┌────────────────────────────┘
+            │ (无交易日从 Phase 5 直接到这里)
             ▼
-   ┌──────────────────────────────────────────────────────┐
-   │ Phase 7: 股票K线 (KlineDownloader)                   │
-   │  end_date = kline_end_date (最近交易日)               │
-   │                                                      │
-   │  ┌─ 日线 (frequency="d") ─────────────────────────┐  │
-   │  │  for adjustflag in [1, 2, 3]:                  │  │
-   │  │    for code in codes (batch=200):              │  │
-   │  │      query_history_k_data_plus(                │  │
-   │  │        code, fields, start_date,               │  │
-   │  │        end_date, "d", adjustflag)              │  │
-   │  │    → 每批后 sleep(2s)                          │  │
-   │  │  API: 5,524 × 3 = 16,572 次                   │  │
-   │  └────────────────────────────────────────────────┘  │
-   │                                                      │
-   │  ┌─ 周线 (frequency="w") ─────────────────────────┐  │
-   │  │  for adjustflag in [1, 2, 3]:                  │  │
-   │  │    for code in codes (batch=200):              │  │
-   │  │      query_history_k_data_plus(                │  │
-   │  │        code, fields, start_date, "w", adj)     │  │
-   │  │  API: 5,524 × 3 = 16,572 次                   │  │
-   │  └────────────────────────────────────────────────┘  │
-   │                                                      │
-   │  ┌─ 月线 (frequency="m") ─────────────────────────┐  │
-   │  │  for adjustflag in [1, 2, 3]:                  │  │
-   │  │    for code in codes (batch=200):              │  │
-   │  │      query_history_k_data_plus(                │  │
-   │  │        code, fields, start_date, "m", adj)     │  │
-   │  │  API: 5,524 × 3 = 16,572 次                   │  │
-   │  └────────────────────────────────────────────────┘  │
-   │                                                      │
-   │  断点续传: 中断后从 last_code 继续                    │
-   │  去重: get_last_downloaded() → max(date) 之后开始    │
-   └────────┬─────────────────────────────────────────────┘
-            │
-            ▼
-   ┌──────────────────────────────────────────────────────┐
-   │ Phase 8: 分钟K线 (KlineDownloader)                   │
-   │ (默认关闭, config: kline.minute.enabled=false)       │
-   │ end_date = kline_end_date (最近交易日)                │
-   │                                                      │
-   │  for freq in [5, 15, 30, 60]:                       │
-   │    for adjustflag in [1, 2, 3]:                     │
-   │      for code in codes (batch=200):                 │
-   │        query_history_k_data_plus(                   │
-   │          code, fields, start_date, freq, adj)       │
-   │  API: 5,524 × 4 × 3 = 66,288 次                    │
-   └────────┬─────────────────────────────────────────────┘
-            │
-            ▼ (无交易日从 Phase 5 直接到这里)
 ┌─────────────────────────────────────────────────────────┐
 │ Phase 9: 财务数据 (FinancialDownloader)                  │
+│  (可通过 --skip-financial 跳过)                          │
 │                                                         │
 │  for table in [profit, operation, growth,               │
 │                balance, cash_flow, dupont]:             │
+│    预扫描已有 (code, year, quarter)                      │
 │    for code in codes:                                   │
 │      for year in range(start_year, current_year+1):     │
 │        for quarter in [1, 2, 3, 4]:                     │
 │          if (code,year,quarter) not in existing:        │
 │            query_{table}_data(code, year, quarter)      │
 │          sleep(0.5s)                                    │
+│    攒批 upsert (每 500 条提交)                           │
 │                                                         │
-│  API: 5,524 × 6 × 20 × 4 = ~2,616,000 次              │
-│  占总请求的 95%                                          │
+│  API: 仅下载缺失组合，重跑时请求量最小化                  │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────┐
 │ Phase 10: 公司报告 (ReportDownloader)                    │
+│  (可通过 --skip-reports 跳过)                            │
 │                                                         │
 │  1. performance_express   ← query_performance_express() │
 │     for code in codes:                                  │
@@ -168,12 +163,15 @@
 │         code, start_date, end_date)                     │
 │       sleep(2s)                                         │
 │                                                         │
-│  API: 5,524 × 2 = 11,048 次                            │
+│  start_date = get_reports_start_date() (配置)            │
+│  end_date   = 昨天                                      │
+│  API: 5,524 × 2 = ~11,048 次                            │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────┐
 │ Phase 11: 分红与复权 (DividendDownloader)                │
+│  (可通过 --skip-dividend 跳过)                           │
 │                                                         │
 │  1. dividend              ← query_dividend_data()       │
 │     for code in codes:                                  │
@@ -200,6 +198,8 @@
                        ▼
 ┌─────────────────────────────────────────────────────────┐
 │                     下载完成                              │
+│  • 清理 checkpoint 文件                                  │
+│  • 输出各阶段下载统计                                    │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -224,6 +224,12 @@
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────┐
+│ 加载股票列表（过滤条件：type=1 AND status=1）             │
+│  → 仅正常上市的A股，不含退市/指数/ETF等                   │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────┐
 │ 更新元数据                                                │
 │  • trade_dates          ← 全量刷新                       │
 │  • stock_industry       ← 全量刷新                       │
@@ -237,7 +243,7 @@
 │    get_latest_trading_day_on_or_before(target_date)      │
 │                                                         │
 │  if kline_end_date >= start_date → 有数据可拉            │
-│  else → 跳过 K 线更新                                    │
+│  else → 跳过 K 线更新（非交易日/周末/节假日）              │
 └──────────────────────┬──────────────────────────────────┘
                        │
               ┌──── 有数据可拉? ────┐
@@ -246,7 +252,8 @@
               ▼                    ▼
    ┌──────────────────┐   ┌──────────────────────────────┐
    │ 跳过K线更新       │   │ 周一? → 更新指数成分股       │
-   │ 直接去财务更新    │   │ (target_date, sz50/hs300..) │
+   │ 直接去财务更新    │   │ (target_date weekday==0)    │
+   │                  │   │ → sz50/hs300/zz500           │
    └──────────────────┘   └──────────────┬───────────────┘
                                          │
                                          ▼
@@ -265,18 +272,20 @@
                                 │ (仅日线, 不含周/月)     │
                                 │ start=start_date        │
                                 │ end=kline_end_date      │
-                                │ 3种复权                 │
-                                │ API: 5,524 × 3 = 16,572│
+                                │ 3种复权 (adj=1,2,3)     │
+                                │ API: N_stocks × 3      │
+                                │ per-code增量检查        │
                                 └──────────────┬─────────┘
                                                │
                                                ▼
 ┌─────────────────────────────────────────────────────────┐
-│ 更新财务数据 (仅当前季度)                                 │
+│ 更新财务数据 (仅当前/上季度)                              │
 │                                                         │
 │  if Q1: 查 Q1                                           │
 │  else:  查 Q(current-1) 和 Q(current)                   │
+│  预扫描已有 (code, year, quarter)，仅下载缺失组合         │
 │                                                         │
-│  API: 5,524 × 6 × 2 = ~66,288 次                       │
+│  API: 仅新增季度，大幅少于全量                            │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
@@ -354,6 +363,7 @@
 - `end_date` = `kline_end_date`（最近交易日，全量下载）或数据库 MAX(date)+1（增量更新）
 - 每次重新拉取整个配置日期范围，通过 upsert 去重
 - 不做 per-code 的增量检查
+- 每个指数间 sleep(batch_sleep)
 
 ---
 
@@ -361,9 +371,9 @@
 
 | 表 | 下载策略 | 保存模式 | 去重策略 | 更新策略 |
 |---|---|---|---|---|
-| `all_stock_daily` | 逐股票 × 3种复权，批量200只 | **upsert** | **per-code**: `get_last_downloaded()` | **增量 + 断点续传** |
-| `all_stock_weekly` | 逐股票 × 3种复权，批量200只 | **upsert** | **per-code**: `get_last_downloaded()` | **增量 + 断点续传** |
-| `all_stock_monthly` | 逐股票 × 3种复权，批量200只 | **upsert** | **per-code**: `get_last_downloaded()` | **增量 + 断点续传** |
+| `all_stock_daily` | 逐股票 × 3种复权，批量200只 | **upsert** | **per-code+adjustflag**: `get_last_downloaded()` | **增量 + 断点续传** |
+| `all_stock_weekly` | 逐股票 × 3种复权，批量200只 | **upsert** | **per-code+adjustflag**: `get_last_downloaded()` | **增量 + 断点续传** |
+| `all_stock_monthly` | 逐股票 × 3种复权，批量200只 | **upsert** | **per-code+adjustflag**: `get_last_downloaded()` | **增量 + 断点续传** |
 
 **日期范围:**
 - 全量下载: `start_date` = 配置值, `end_date` = `kline_end_date` (最近交易日)
@@ -371,22 +381,23 @@
 
 **per-code 去重逻辑:**
 ```
-last = get_last_downloaded(table, code)          # 查DB中该股票的最新日期
-actual_start = max(start_date, last)             # 从最新日期之后开始
-if last >= end_date: continue                    # 已完成则跳过
+last = get_last_downloaded(table, code, adjustflag=adjustflag)  # 含复权过滤
+actual_start = max(start_date, last) if last else start_date
+if last and last >= end_date: continue    # 已完成则跳过
 ```
 
-**断点续传逻辑 (仅日线):**
+**断点续传逻辑 (日线/周线/月线均支持):**
 ```
 # 中断时保存 checkpoint: {table, adjustflag, last_code}
+resume = _get_resume_code(table, adjustflag, codes)
 # 恢复时从 last_code 之后继续，跳过已处理的股票
-resume = _get_resume_code("all_stock_daily", adjustflag, codes)
 ```
 
 **说明:**
 - 每批200只股票攒成一个 DataFrame，统一 upsert
-- 日线有断点续传（SIGINT/SIGTERM 时保存 checkpoint 文件）
-- 周线/月线无断点续传，但有 per-code 增量检查
+- 日线/周线/月线均有断点续传（SIGINT/SIGTERM 时保存 checkpoint 文件）
+- `_interrupted` 标志控制流程：中断后跳过后续频率下载
+- 批次间 sleep(batch_sleep)
 
 ---
 
@@ -394,15 +405,17 @@ resume = _get_resume_code("all_stock_daily", adjustflag, codes)
 
 | 表 | 下载策略 | 保存模式 | 去重策略 | 更新策略 |
 |---|---|---|---|---|
-| `all_stock_5min` | 逐股票 × 3种复权，批量200只 | **upsert** | **per-code**: `get_last_downloaded()` | 增量（无断点续传） |
-| `all_stock_15min` | 同上 | **upsert** | **per-code**: `get_last_downloaded()` | 增量（无断点续传） |
-| `all_stock_30min` | 同上 | **upsert** | **per-code**: `get_last_downloaded()` | 增量（无断点续传） |
-| `all_stock_60min` | 同上 | **upsert** | **per-code**: `get_last_downloaded()` | 增量（无断点续传） |
+| `all_stock_5min` | 逐股票 × 配置复权，批量200只 | **upsert** | **per-code+adjustflag**: `get_last_downloaded()` | 增量（无断点续传） |
+| `all_stock_15min` | 同上 | **upsert** | **per-code+adjustflag**: `get_last_downloaded()` | 增量（无断点续传） |
+| `all_stock_30min` | 同上 | **upsert** | **per-code+adjustflag**: `get_last_downloaded()` | 增量（无断点续传） |
+| `all_stock_60min` | 同上 | **upsert** | **per-code+adjustflag**: `get_last_downloaded()` | 增量（无断点续传） |
 
 **说明:**
 - 默认关闭 (`config.kline.minute.enabled=false`)
+- 复权方式从配置读取: `kline.minute.adjustflags` (默认仅 `[3]` 不复权)
 - 与 Phase 7 共享 `_download_kline_batch` 方法
 - 有 per-code 增量检查，无断点续传
+- 无 `end_date` 限制（传 None，拉取全量）
 
 ---
 
@@ -464,7 +477,9 @@ for code, year, quarter in all_combinations:
 **说明:**
 - 分红数据遍历所有年份 × 两种类型，无预检查已存在数据
 - 完全依赖 `INSERT OR REPLACE` 去重
-- 增量更新时仅下载当年数据
+- 增量更新时仅下载当年 (`current_year`) 数据
+- `download_all_dividend` 支持传入 `start_year/end_year` 和 `start_date/end_date`
+- `_api_call` 包装 BaoStock API，自动递增请求计数
 
 ---
 
@@ -482,54 +497,72 @@ for code, year, quarter in all_combinations:
 ```
 ┌─────────────────────────────────────────────────────┐
 │  download_daily_kline(codes, start_date, end_date)  │
+│  download_weekly_kline(...) / download_monthly...() │
 └──────────────────────┬──────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────┐
 │  for adjustflag in [1, 2, 3]:  ← 后复权/前复权/不复权│
 │  ┌───────────────────────────────────────────────┐  │
-│  │  _download_kline_batch()                      │  │
+│  │  resume = _get_resume_code(table, adj, codes) │  │
+│  │  _download_kline_batch(codes, ..., adj, resume)│ │
 │  │                                               │  │
 │  │  for batch in codes (每批200只):              │  │
 │  │  ┌─────────────────────────────────────────┐ │  │
 │  │  │  for code in batch:                     │ │  │
 │  │  │                                         │ │  │
-│  │  │  1. 检查断点续传                         │ │  │
+│  │  │  1. 检查中断标志                         │ │  │
+│  │  │     if _interrupted: return total_rows  │ │  │
+│  │  │                                         │ │  │
+│  │  │  2. 检查断点续传                         │ │  │
 │  │  │     if skipping: continue               │ │  │
+│  │  │     if code == resume_from: skipping=False││  │
 │  │  │                                         │ │  │
-│  │  │  2. 查询已下载的最新日期                  │ │  │
-│  │  │     last = get_last_downloaded(table,   │ │  │
-│  │  │                          code)          │ │  │
+│  │  │  3. 查询已下载的最新日期 (含adj过滤)     │ │  │
+│  │  │     last = get_last_downloaded(         │ │  │
+│  │  │              table, code,               │ │  │
+│  │  │              adjustflag=adjustflag)     │ │  │
 │  │  │                                         │ │  │
-│  │  │  3. 计算实际起始日期                     │ │  │
+│  │  │  4. 计算实际起始日期                     │ │  │
 │  │  │     actual_start =                      │ │  │
-│  │  │       max(start_date, last)             │ │  │
+│  │  │       max(start_date, last) if last     │ │  │
+│  │  │       else start_date                   │ │  │
 │  │  │                                         │ │  │
-│  │  │  4. 检查是否已完成                       │ │  │
-│  │  │     if last >= end_date: continue       │ │  │
+│  │  │  5. 检查是否已完成                       │ │  │
+│  │  │     if last and last >= end_date:       │ │  │
+│  │  │       保存 checkpoint, continue         │ │  │
 │  │  │                                         │ │  │
-│  │  │  5. API 调用                            │ │  │
+│  │  │  6. API 调用 (带重试)                    │ │  │
 │  │  │     query_with_retry(                   │ │  │
 │  │  │       bs.query_history_k_data_plus,     │ │  │
-│  │  │       code=code,                        │ │  │
-│  │  │       fields=fields,                    │ │  │
-│  │  │       start_date=actual_start,          │ │  │
-│  │  │       end_date=end_date,                │ │  │
-│  │  │       frequency="d",                    │ │  │
-│  │  │       adjustflag=str(adjustflag))       │ │  │
+│  │  │       code, fields,                     │ │  │
+│  │  │       actual_start, end_date,           │ │  │
+│  │  │       frequency, str(adjustflag))       │ │  │
 │  │  │                                         │ │  │
-│  │  │  6. 保存数据 (upsert)                   │ │  │
-│  │  │     INSERT OR REPLACE                   │ │  │
-│  │  │                                         │ │  │
-│  │  │  7. 更新检查点                           │ │  │
-│  │  │     _checkpoint_data = {                │ │  │
-│  │  │       table, adjustflag, last_code      │ │  │
-│  │  │     }                                   │ │  │
+│  │  │  7. 保存 checkpoint                      │ │  │
+│  │  │     _checkpoint_data = {table, adj,     │ │  │
+│  │  │                          last_code: code}│ │  │
 │  │  └─────────────────────────────────────────┘ │  │
 │  │                                               │  │
-│  │  8. 批量写入数据库 (upsert)                   │  │
-│  │  9. sleep(2s)  ← 批次间隔                    │  │
+│  │  8. 字段重命名 (pctChg→pct_chg 等)           │  │
+│  │  9. 类型转换 (数值/turn/整型)                 │  │
+│  │  10. 批量写入数据库 (upsert)                  │  │
+│  │  11. sleep(batch_sleep)                       │  │
 │  └───────────────────────────────────────────────┘  │
+│                                                     │
+│  if _interrupted: break  ← 跳过后续频率              │
+└─────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────┐
+│  download_minute_kline(codes, frequency="5", ...)    │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│  adjustflags = config.kline.minute.adjustflags [3]  │
+│  for adjustflag in adjustflags:                     │
+│    _download_kline_batch(codes, ..., adj)           │
+│    → 同上，但无断点续传，无 end_date                 │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -547,7 +580,8 @@ for code, year, quarter in all_combinations:
 │  │     rs = query_func(**kwargs)                 │  │
 │  │                                               │  │
 │  │  3. _increment_request_count()                │  │
-│  │     UPDATE request_count SET count=count+1    │  │
+│  │     INSERT ... ON CONFLICT DO UPDATE          │  │
+│  │     SET count = count + 1                     │  │
 │  │     WHERE date = today                        │  │
 │  │                                               │  │
 │  │  4. 检查是否超限                               │  │
@@ -560,23 +594,31 @@ for code, year, quarter in all_combinations:
 └─────────────────────────────────────────────────────┘
 ```
 
-## 7. 各阶段 API 请求汇总
+**说明:**
+- `_increment_request_count` 使用直接 SQL（UPSERT），避免 DBManager 迁移开销
+- 失败请求也会计数（服务器端已计数）
+- 请求计数表 `request_count` 在 `migrate_schema()` 中自动创建
+
+## 7. 各阶段 API 请求汇总（估算）
 
 | Phase | 模块 | API 请求数 | 占比 | 耗时 |
 |-------|------|-----------|------|------|
 | 2 | 元数据 | 3 | <0.1% | <1s |
-| 4 | 宏观数据 | 5 | <0.1% | <1s |
+| 4 | 宏观数据 | 5 | <0.1% | <10s |
 | 5 | 指数成分股 | 3 | <0.1% | <1s |
 | 6 | 指数 K 线 | 24 | <0.1% | ~1min |
-| 7 | 股票 K 线(日/周/月) | 49,716 | 2.8% | ~1天 |
-| 8 | 分钟 K 线 | 66,288 | 3.7% | ~1.4天 |
-| 9 | 财务数据 | ~2,616,000 | **95.0%** | ~53天 |
-| 10 | 公司报告 | 11,048 | 0.6% | ~0.2天 |
+| 7 | 股票 K 线(日/周/月) | ~49,716 | 2.8% | ~1天 |
+| 8 | 分钟 K 线 | ~22,096* | 1.2%* | ~8h* |
+| 9 | 财务数据 | ~2,616,000* | 95%* | ~53天* |
+| 10 | 公司报告 | ~11,048 | 0.6% | ~6h |
 | 11 | 分红与复权 | ~226,484 | 12.8% | ~4.6天 |
-| **合计** | | **~2,969,571** | 100% | **~60天** |
+| **合计** | | **~2,925,379** | 100% | **~60天** |
 
-> 注：Phase 11 分红数据按每年 2 次 (report/operate) 估算，实际可能更少。
-> Phase 8 分钟线默认关闭，不计入常规下载。
+> 注：
+> - Phase 8 分钟线默认关闭，复权方式从配置读取（默认仅 adj=3）
+> - Phase 9 财务数据有预扫描去重，重跑时仅下载缺失组合
+> - Phase 11 分红数据按每年 2 次 (report/operate) 估算
+> - 非交易日自动跳过 K 线下载（节省约 190 万次/年无效请求）
 
 ## 8. 增量更新 API 请求
 
@@ -585,19 +627,29 @@ for code, year, quarter in all_combinations:
 | 元数据刷新 | 2 | trade_dates + stock_industry |
 | 指数成分股 | 3 | 仅周一 |
 | 指数 K 线 | 24 | 8 指数 × 3 频率 |
-| 股票日线 | 16,572 | 5,524 × 3 复权 |
-| 财务数据 | ~66,288 | 5,524 × 6 × 2 季度 |
-| 分红数据 | ~11,048 | 5,524 × 2 |
-| **合计** | **~93,937** | 约 2 天额度 |
+| 股票日线 | N_stocks × 3 | per-code 增量检查，仅新增数据 |
+| 财务数据 | ~66,288* | 5,524 × 6 × 2 季度（预扫描去重） |
+| 分红数据 | ~11,048 | 5,524 × 2（仅当年） |
+| 复权因子 | ~5,524 | 从 start_date 至今 |
+| **合计** | **~82,600** | 约 2 天额度 |
+
+> 注：非交易日（周末/节假日）自动跳过 K 线更新，进一步节省请求
 
 ## 9. 关键配置参数
 
 | 参数 | 默认值 | 来源 | 作用 |
 |------|--------|------|------|
 | `daily_request_limit` | 49,000 | config.yaml | 每日 API 请求上限 |
+| `socket_timeout` | 30 | config.yaml | 网络超时（秒） |
 | `batch_size` | 200 | config.yaml | K 线每批处理的股票数 |
-| `batch_sleep` | 2s | config.yaml | 批次间休眠时间 |
-| `FINANCIAL_SLEEP` | 0.5s | src/config.py | 财务数据每次调用间隔 |
-| `LOGIN_REFRESH_INTERVAL` | 1800s | src/config.py | 会话刷新间隔 (30分钟) |
+| `batch_sleep` | 2 | config.yaml | 批次间休眠时间（秒） |
+| `stocks.filter` | type=1 AND status=1 | config.yaml | 股票筛选条件（SQL WHERE） |
+| `kline.daily.adjustflags` | [1, 2, 3] | config.yaml | 日线复权方式 |
+| `kline.minute.adjustflags` | [3] | config.yaml | 分钟线复权方式（默认仅不复权） |
+| `kline.minute.enabled` | false | config.yaml | 是否下载分钟数据 |
+| `financial.start_year` | 2007 | config.yaml | 财务数据起始年份 |
+| `reports.start_date` | 2003-01-01 | config.yaml | 公司报告起始日期 |
+| `index_kline.start_date` | 2006-01-01 | config.yaml | 指数 K 线起始日期 |
+| `FINANCIAL_SLEEP` | 0.5 | src/config.py | 财务数据每次调用间隔 |
+| `LOGIN_REFRESH_INTERVAL` | 1800 | src/config.py | 会话刷新间隔（30分钟） |
 | `MAX_RETRIES` | 3 | src/config.py | 查询失败重试次数 |
-| `socket_timeout` | 30s | config.yaml | 网络超时 |
