@@ -237,12 +237,18 @@ class BaseDownloader:
         return None
 
     def get_last_downloaded(
-        self, table: str, code: str, date_column: str = "date"
+        self, table: str, code: str, date_column: str = "date", adjustflag: int | None = None
     ) -> str | None:
         try:
-            row = self.conn.execute(
-                f"SELECT MAX({date_column}) FROM {table} WHERE code = ?", (code,)
-            ).fetchone()
+            if adjustflag is not None:
+                row = self.conn.execute(
+                    f"SELECT MAX({date_column}) FROM {table} WHERE code = ? AND adjustflag = ?",
+                    (code, adjustflag),
+                ).fetchone()
+            else:
+                row = self.conn.execute(
+                    f"SELECT MAX({date_column}) FROM {table} WHERE code = ?", (code,)
+                ).fetchone()
             return row[0] if row and row[0] else None
         except sqlite3.OperationalError:
             return None

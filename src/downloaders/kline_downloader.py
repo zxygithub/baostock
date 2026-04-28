@@ -47,7 +47,7 @@ class KlineDownloader(BaseDownloader):
                         skipping = False
                     continue
 
-                last = self.get_last_downloaded(table, code)
+                last = self.get_last_downloaded(table, code, adjustflag=adjustflag)
                 actual_start = max(start_date, last) if last else start_date
                 if last and last >= (end_date or "9999-99-99"):
                     self._checkpoint_data = {
