@@ -290,7 +290,7 @@ def main():
 
     stock_count = len(stocks)
     kline_requests = stock_count * 3 * ADJUST_FLAGS
-    minute_requests = stock_count * MINUTE_FREQUENCIES
+    minute_requests = stock_count * len(MINUTE_BARS_PER_DAY)
     financial_requests = sum(results[t] for t in FINANCIAL_TABLES)
     report_requests = stock_count * 2
     div_requests = stock_count

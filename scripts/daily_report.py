@@ -246,42 +246,39 @@ def get_precise_estimates(conn, counts):
     return est
 
 
-def get_api_request_estimates(conn):
+def get_api_request_estimates(conn, precise_est=None):
+    """Calculate API request estimates by category.
+    
+    If precise_est is provided, uses precise per-table estimates for
+    K-line and financial data calculations.
+    """
+    if precise_est is None:
+        precise_est = get_precise_estimates(conn, {})
+
     stocks = conn.execute(
         "SELECT code, ipo_date, out_date FROM stock_basic WHERE type = 1"
     ).fetchall()
     stock_count = len(stocks)
-    current_year = datetime.now().year
+    ADJUST_FLAGS = 3
 
-    kline_req = stock_count * 3 * 3
-    fin_req = 0
-    for code, ipo, out in stocks:
-        if not ipo:
-            continue
-        try:
-            ipo_year = int(ipo[:4])
-        except (ValueError, IndexError):
-            ipo_year = 2007
-        fin_start = max(2007, ipo_year)
-        years = current_year - fin_start + 1
-        if years > 0:
-            fin_req += years * 4 * 6
+    # K线: 1 API call per (stock, frequency, adjustflag), returns all rows for that combo
+    kline_req = stock_count * 3 * ADJUST_FLAGS
 
-    report_req = 0
-    for code, ipo, out in stocks:
-        if not ipo:
-            continue
-        try:
-            ipo_year = int(ipo[:4])
-        except (ValueError, IndexError):
-            ipo_year = 2003
-        rpt_start = max(2003, ipo_year)
-        years = current_year - rpt_start + 1
-        if years > 0:
-            report_req += years * 2
+    # 财务: each (stock, year, quarter) = 1 API request
+    fin_tables = ["profit_data", "operation_data", "growth_data",
+                  "balance_data", "cash_flow_data", "dupont_data"]
+    fin_req = sum(precise_est.get(t, 0) for t in fin_tables)
 
+    # 公司报告: 1 API call per stock (fetches all years in one call)
+    report_req = stock_count * 2
+
+    # 分红: each stock = 1 API request
     div_req = stock_count
+
+    # 指数K线: 8 indices * 3 frequencies * 3 adjustflags
     index_req = 8 * 3 * 3
+
+    # 宏观 + 元数据
     macro_req = 5
     meta_req = 4
 
@@ -308,7 +305,7 @@ def get_api_request_estimates(conn):
 
 def get_progress_table(conn, counts):
     estimates = get_precise_estimates(conn, counts)
-    api_req = get_api_request_estimates(conn)
+    api_req = get_api_request_estimates(conn, estimates)
 
     categories = {
         "K线数据（日/周/月）": ["all_stock_daily", "all_stock_weekly", "all_stock_monthly"],
@@ -358,52 +355,57 @@ def build_email(sender, start_time, end_time, today_requests, total_requests,
     msg["From"] = sender
 
     pct_used = (today_requests / api_req["daily_limit"] * 100) if api_req["daily_limit"] else 0
-    est_days = round(api_req["total"] / 49000, 1)
+    est_days = api_req["days_remaining"]
 
     html = f"""
     <html>
     <head>
         <style>
-            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; color: #333; }}
-            h2 {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
-            h3 {{ color: #2c3e50; margin-top: 25px; }}
-            .summary {{ background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; }}
-            .summary p {{ margin: 8px 0; font-size: 15px; }}
-            .summary strong {{ color: #2980b9; }}
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; color: #333; margin: 0; }}
+            h2 {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-top: 0; }}
+            h3 {{ color: #2c3e50; margin: 20px 0 12px 0; font-size: 16px; }}
+            .info-cards {{ display: flex; gap: 16px; margin-bottom: 20px; }}
+            .card {{ flex: 1; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; }}
+            .card p {{ margin: 8px 0; font-size: 14px; }}
+            .card-label {{ font-weight: bold; color: #555; }}
             .status-ok {{ color: #27ae60; font-weight: bold; }}
             .status-warn {{ color: #f39c12; font-weight: bold; }}
             .status-error {{ color: #e74c3c; font-weight: bold; }}
-            table {{ border-collapse: collapse; width: 100%; font-size: 14px; }}
-            th {{ background: #34495e; color: white; padding: 10px 8px; text-align: left; }}
+            .api-card {{ background: #e8f4f8; }}
+            .api-card h3 {{ margin-top: 0; }}
+            .api-card p {{ margin: 6px 0; font-size: 14px; }}
+            .api-divider {{ border-top: 1px solid #b0d4e8; margin: 10px 0; }}
+            table {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
+            th {{ background: #2c3e50; color: white; padding: 10px 8px; text-align: left; }}
             td {{ padding: 8px; border-bottom: 1px solid #eee; }}
             .cat {{ font-weight: bold; color: #555; background: #f4f4f4; }}
             .num {{ text-align: right; font-family: monospace; }}
             tr:hover {{ background: #f9f9f9; }}
-            .api-summary {{ background: #eef7ff; padding: 15px; border-radius: 8px; margin: 20px 0; }}
-            .api-summary p {{ margin: 6px 0; font-size: 14px; }}
+            .footer {{ margin-top: 30px; color: #7f8c8d; font-size: 12px; }}
         </style>
     </head>
     <body>
         <h2>📊 BaoStock 数据下载状态日报</h2>
 
-        <div class="summary">
-            <p><strong>🕒 最近一次拉取开始时间:</strong> {start_time}</p>
-            <p><strong>🏁 最近一次拉取结束时间:</strong> {end_time}</p>
-            <p><strong>📈 今日已使用请求次数:</strong> {today_requests:,} 次 ({pct_used:.0f}%)</p>
-            <p><strong>📊 累计总请求次数:</strong> {total_requests:,} 次</p>
-            <p><strong>🛡️ 黑名单状态:</strong> <span class="{'status-ok' if '正常' in blacklist_status else 'status-error'}">{blacklist_status}</span> - {blacklist_detail}</p>
-        </div>
-
-        <div class="api-summary">
-            <h3 style="margin-top:0">🔢 API 请求估算（基于 IPO 日期精确计算）</h3>
-            <p><strong>K 线（日/周/月 × 3 复权）:</strong> {api_req["kline"]:,} 次</p>
-            <p><strong>财务数据（按 IPO 年份）:</strong> {api_req["financial"]:,} 次</p>
-            <p><strong>公司报告:</strong> {api_req["reports"]:,} 次</p>
-            <p><strong>分红数据:</strong> {api_req["dividend"]:,} 次</p>
-            <p><strong>指数 K 线:</strong> {api_req["index"]:,} 次</p>
-            <p><strong>宏观 + 元数据:</strong> {api_req["macro"] + api_req["meta"]:,} 次</p>
-            <p><strong>─────────────────────────────</strong></p>
-            <p><strong>总请求数:</strong> {api_req["total"]:,} 次 | <strong>按 49,000 次/天:</strong> 约 {est_days} 天</p>
+        <div class="info-cards">
+            <div class="card">
+                <p><span class="card-label">⏱️ 最近一次拉取开始时间:</span> {start_time}</p>
+                <p><span class="card-label">⏱️ 最近一次拉取结束时间:</span> {end_time}</p>
+                <p><span class="card-label">📈 今日已使用请求次数:</span> {today_requests:,} 次 ({pct_used:.0f}%)</p>
+                <p><span class="card-label">📊 累计总请求次数:</span> {total_requests:,} 次</p>
+                <p><span class="card-label">🛡️ 黑名单状态:</span> <span class="{'status-ok' if '正常' in blacklist_status else 'status-error'}">{blacklist_status}</span> - {blacklist_detail}</p>
+            </div>
+            <div class="card api-card">
+                <h3>🧮 API 请求估算（基于 IPO 日期精确计算）</h3>
+                <p><strong>K 线（日/周/月 × 3 复权）:</strong> {api_req["kline"]:,} 次</p>
+                <p><strong>财务数据（按 IPO 年份）:</strong> {api_req["financial"]:,} 次</p>
+                <p><strong>公司报告:</strong> {api_req["reports"]:,} 次</p>
+                <p><strong>分红数据:</strong> {api_req["dividend"]:,} 次</p>
+                <p><strong>指数 K 线:</strong> {api_req["index"]:,} 次</p>
+                <p><strong>宏观 + 元数据:</strong> {api_req["macro"] + api_req["meta"]:,} 次</p>
+                <div class="api-divider"></div>
+                <p><strong>总请求数:</strong> {api_req["total"]:,} 次 | <strong>按 49,000 次/天:</strong> 约 {est_days} 天</p>
+            </div>
         </div>
 
         <h3>数据拉取情况综合评估表</h3>
@@ -423,7 +425,7 @@ def build_email(sender, start_time, end_time, today_requests, total_requests,
             </tbody>
         </table>
 
-        <p style="margin-top: 30px; color: #7f8c8d; font-size: 12px;">
+        <p class="footer">
             此邮件由 BaoStock 自动报告系统生成。<br>
             预估总量基于每只股票的实际 IPO 日期和交易日历精确计算，非统一起始日期估算。
         </p>
