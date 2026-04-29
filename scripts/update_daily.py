@@ -39,33 +39,33 @@ def main():
         datetime.strptime(last_index, "%Y-%m-%d") + timedelta(days=1)
     ).strftime("%Y-%m-%d")
 
-    logger.info(f"Stock K-line from: {start_date}")
-    logger.info(f"Index K-line from: {index_start}")
-
-    conn = sqlite3.connect(str(DB_PATH))
-    rows = conn.execute(
-        "SELECT code FROM stock_basic WHERE type = 1 AND status = 1"
-    ).fetchall()
-    codes = sorted(row[0] for row in rows)
-    conn.close()
-    if not codes:
-        logger.error("No stock codes found. Run full download first.")
-        return
-
-    logger.info(f"Updating {len(codes)} stocks...")
-
-    with MetaDownloader(str(DB_PATH), logger) as dl:
-        dl.download_trade_dates()
-        dl.download_stock_industry()
-
     # 程序在凌晨运行，目标是更新截止到前一天的数据
-    # 例如：26日凌晨0:05运行 → 更新截止到25日(含)的数据
-    # 若25日非交易日，则追溯到最近的交易日（如周五）
     target_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
     kline_end_date = db.get_latest_trading_day_on_or_before(target_date)
 
+    logger.info(f"DB max date (daily): {last_daily}")
+    logger.info(f"DB max date (index):  {last_index}")
+    logger.info(f"K-line query range:   {start_date} → {kline_end_date} (target: {target_date})")
+    logger.info(f"Index query range:    {index_start} → {kline_end_date}")
+
     if kline_end_date and kline_end_date >= start_date:
-        logger.info(f"Latest trading day on or before {target_date}: {kline_end_date}. Proceeding with K-line update.")
+        logger.info(f"Proceeding with K-line update.")
+
+        conn = sqlite3.connect(str(DB_PATH))
+        rows = conn.execute(
+            "SELECT code FROM stock_basic WHERE type = 1 AND status = 1"
+        ).fetchall()
+        codes = sorted(row[0] for row in rows)
+        conn.close()
+        if not codes:
+            logger.error("No stock codes found. Run full download first.")
+            return
+
+        logger.info(f"Updating {len(codes)} stocks...")
+
+        with MetaDownloader(str(DB_PATH), logger) as dl:
+            dl.download_trade_dates()
+            dl.download_stock_industry()
 
         # 周一更新指数成分股（基于 target_date 判断）
         if datetime.strptime(target_date, "%Y-%m-%d").weekday() == 0:
