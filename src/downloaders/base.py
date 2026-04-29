@@ -10,6 +10,62 @@ from pathlib import Path
 
 from src.config_loader import get_socket_timeout, get_daily_request_limit
 
+# API request log marker - used for statistical analysis
+API_LOG_MARKER = "[API_REQ]"
+
+
+class _ApiResultWrapper:
+    """Wraps a BaoStock result set to log row count when fully consumed."""
+
+    def __init__(self, rs, func_name: str, params: str, logger: logging.Logger):
+        self._rs = rs
+        self._func_name = func_name
+        self._params = params
+        self._logger = logger
+        self._row_count = 0
+        self._consumed = False
+        self._has_error = False
+
+    def mark_error(self):
+        """Mark this result as having an error (suppresses row count logging)."""
+        self._has_error = True
+
+    def __getattr__(self, name):
+        return getattr(self._rs, name)
+
+    def next(self):
+        result = self._rs.next()
+        if result:
+            self._row_count += 1
+        else:
+            self._consumed = True
+            if not self._has_error:
+                self._logger.info(
+                    f"{API_LOG_MARKER} {self._func_name} | params={self._params} | rows={self._row_count}"
+                )
+        return result
+
+    def get_row_data(self):
+        return self._rs.get_row_data()
+
+    @property
+    def error_code(self):
+        return self._rs.error_code
+
+    @property
+    def error_msg(self):
+        return self._rs.error_msg
+
+
+def _build_params_str(func, *args, **kwargs) -> str:
+    """Build a concise parameter string for logging."""
+    parts = []
+    for arg in args:
+        parts.append(str(arg))
+    for k, v in kwargs.items():
+        parts.append(f"{k}={v}")
+    return " ".join(parts)
+
 
 # Load configuration when module is imported
 _SOCKET_TIMEOUT = get_socket_timeout()
@@ -88,9 +144,11 @@ class BaseDownloader:
 
     def _api_call(self, func, *args, **kwargs):
         """Wrapper for direct baostock API calls that increments request count."""
+        func_name = getattr(func, "__name__", str(func))
+        params = _build_params_str(func, *args, **kwargs)
         rs = func(*args, **kwargs)
         self._increment_request_count()
-        return rs
+        return _ApiResultWrapper(rs, func_name, params, self.logger)
 
     def login(self):
         lg = bs.login()
@@ -194,8 +252,12 @@ class BaseDownloader:
                 rs = query_func(**kwargs)
                 # 无论成功失败都计数，因为服务器端已计数
                 self._increment_request_count()
+                func_name = getattr(query_func, "__name__", str(query_func))
+                params = _build_params_str(query_func, **kwargs)
+                wrapped = _ApiResultWrapper(rs, func_name, params, self.logger)
                 if rs.error_code == "0":
-                    return rs
+                    return wrapped
+                wrapped.mark_error()
                 if "session" in rs.error_msg.lower() or "网络" in rs.error_msg:
                     self.logger.warning(
                         f"Session/network error, re-logging in: {rs.error_msg}"
