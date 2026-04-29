@@ -16,6 +16,7 @@
 ### 3. API 参考
 - **[BaoStock Python API](pythonAPI.md)** - BaoStock 官方API文档（复制版）
 - **[BaoStock复权因子简介](BaoStock复权因子简介.pdf)** - 复权算法说明（PDF）
+- **[API 请求日志分析](api_request_log_analysis.md)** - 日志格式、统计命令、异常排查
 
 ### 4. 配置说明
 - **[配置文件说明](../config.yaml)** - 下载配置参数详解
