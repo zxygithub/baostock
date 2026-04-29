@@ -62,14 +62,15 @@ class BaseDownloader:
         Avoids DBManager/migrate_schema() overhead by executing raw SQL directly.
         Uses INSERT ... ON CONFLICT DO UPDATE to atomically insert or increment.
         """
-        from datetime import date
+        from datetime import date, datetime
 
         today = date.today().isoformat()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn = sqlite3.connect(str(self.db_path))
         conn.execute(
-            "INSERT INTO request_count (date, count) VALUES (?, 1) "
-            "ON CONFLICT(date) DO UPDATE SET count = count + 1",
-            (today,),
+            "INSERT INTO request_count (date, count, update_time) VALUES (?, 1, ?) "
+            "ON CONFLICT(date) DO UPDATE SET count = count + 1, update_time = excluded.update_time",
+            (today, now),
         )
         conn.commit()
         cursor = conn.execute("SELECT count FROM request_count WHERE date = ?", (today,))
