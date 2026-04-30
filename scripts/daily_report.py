@@ -310,7 +310,7 @@ def get_progress_table(conn, counts):
     categories = {
         "K线数据（日/周/月）": ["all_stock_daily", "all_stock_weekly", "all_stock_monthly"],
         "财务数据（6类）": ["profit_data", "operation_data", "growth_data",
-                         "balance_data", "cash_flow_data", "dupont_data"],
+                          "balance_data", "cash_flow_data", "dupont_data"],
         "分红与报告": ["dividend", "adjust_factor", "performance_express", "forecast_report"],
         "指数K线": ["index_daily", "index_weekly", "index_monthly"],
         "元数据": ["stock_basic", "trade_dates", "stock_industry",
@@ -346,10 +346,197 @@ def get_progress_table(conn, counts):
     return rows_html, api_req
 
 # ---------------------------------------------------------------------------
+# API Request Log Analysis
+# ---------------------------------------------------------------------------
+def parse_api_request_log():
+    """Parse [API_REQ] log entries from the latest download session.
+    
+    Returns a dict with:
+      - rows: list of (phase, api_func, requests, total_rows, avg) tuples
+      - total_requests, total_rows
+      - kline_breakdown: dict with frequency/adjustflag stats
+      - zero_row_count, status
+    """
+    if not LOG_DIR.exists():
+        return None
+
+    logs = sorted([f for f in LOG_DIR.glob("*.log") if re.match(r"2\d{7}_\d{6}\.log", f.name)])
+    if not logs:
+        return None
+
+    latest_log = logs[-1]
+    content = latest_log.read_text(encoding="utf-8")
+
+    api_lines = [line for line in content.split("\n") if "[API_REQ]" in line]
+    if not api_lines:
+        return None
+
+    # Parse each line
+    func_stats = {}
+    kline_by_freq = {}
+    zero_rows = 0
+    total_req = 0
+    total_rows = 0
+
+    for line in api_lines:
+        # Extract function name and rows
+        m = re.search(r'\[API_REQ\]\s+(\S+)\s+\|.*\|\s+rows=(\d+)', line)
+        if not m:
+            continue
+        func = m.group(1)
+        rows = int(m.group(2))
+
+        func_stats.setdefault(func, {"requests": 0, "total_rows": 0})
+        func_stats[func]["requests"] += 1
+        func_stats[func]["total_rows"] += rows
+        total_req += 1
+        total_rows += rows
+        if rows == 0:
+            zero_rows += 1
+
+        # Track K-line frequency breakdown
+        if func == "query_history_k_data_plus":
+            freq_m = re.search(r'frequency=(\w+)', line)
+            adj_m = re.search(r'adjustflag=(\d+)', line)
+            if freq_m:
+                freq = freq_m.group(1)
+                kline_by_freq.setdefault(freq, {"requests": 0, "total_rows": 0})
+                kline_by_freq[freq]["requests"] += 1
+                kline_by_freq[freq]["total_rows"] += rows
+
+    # Check if download completed or failed
+    status = "✅ 完成"
+    if "FAILED" in content:
+        status = "❌ 中断 (API 上限)"
+    elif "DONE" not in content:
+        status = "⚠️ 未知"
+
+    # Build phase summary
+    phase_map = {
+        "query_trade_dates": "Phase 2: 元数据",
+        "query_stock_basic": "Phase 2: 元数据",
+        "query_stock_industry": "Phase 2: 元数据",
+        "query_deposit_rate_data": "Phase 4: 宏观数据",
+        "query_loan_rate_data": "Phase 4: 宏观数据",
+        "query_required_reserve_ratio_data": "Phase 4: 宏观数据",
+        "query_money_supply_data_month": "Phase 4: 宏观数据",
+        "query_money_supply_data_year": "Phase 4: 宏观数据",
+        "query_sz50_stocks": "Phase 5: 指数成分",
+        "query_hs300_stocks": "Phase 5: 指数成分",
+        "query_zz500_stocks": "Phase 5: 指数成分",
+        "query_history_k_data_plus": "Phase 6/7: K线数据",
+        "query_dividend_data": "Phase 8: 分红数据",
+        "query_adjust_factor": "Phase 8: 分红数据",
+        "query_performance_express_report": "Phase 9: 公司报告",
+        "query_forecast_report": "Phase 9: 公司报告",
+        "query_profit_data": "Phase 8: 财务数据",
+        "query_operation_data": "Phase 8: 财务数据",
+        "query_growth_data": "Phase 8: 财务数据",
+        "query_balance_data": "Phase 8: 财务数据",
+        "query_cash_flow_data": "Phase 8: 财务数据",
+        "query_dupont_data": "Phase 8: 财务数据",
+    }
+
+    rows_list = []
+    for func, stats in sorted(func_stats.items(), key=lambda x: -x[1]["requests"]):
+        phase = phase_map.get(func, "其他")
+        avg = stats["total_rows"] / stats["requests"] if stats["requests"] > 0 else 0
+        rows_list.append((phase, func, stats["requests"], stats["total_rows"], avg))
+
+    return {
+        "rows": rows_list,
+        "total_requests": total_req,
+        "total_rows": total_rows,
+        "kline_by_freq": kline_by_freq,
+        "zero_rows": zero_rows,
+        "status": status,
+        "log_file": latest_log.name,
+    }
+
+
+def build_api_analysis_section(api_log):
+    """Build HTML section for API request analysis."""
+    if api_log is None:
+        return ""
+
+    # Phase summary table
+    phase_rows = ""
+    for phase, func, reqs, t_rows, avg in api_log["rows"]:
+        phase_rows += f"""
+        <tr>
+            <td>{phase}</td>
+            <td><code>{func}</code></td>
+            <td class="num">{reqs:,}</td>
+            <td class="num">{t_rows:,}</td>
+            <td class="num">{avg:.1f}</td>
+        </tr>"""
+
+    # K-line frequency breakdown
+    kline_rows = ""
+    freq_labels = {"d": "日线", "w": "周线", "m": "月线", "5": "5分钟", "15": "15分钟", "30": "30分钟", "60": "60分钟"}
+    for freq, stats in sorted(api_log["kline_by_freq"].items()):
+        label = freq_labels.get(freq, freq)
+        avg = stats["total_rows"] / stats["requests"] if stats["requests"] > 0 else 0
+        kline_rows += f"""
+        <tr>
+            <td>{label}</td>
+            <td class="num">{stats["requests"]:,}</td>
+            <td class="num">{stats["total_rows"]:,}</td>
+            <td class="num">{avg:.1f}</td>
+        </tr>"""
+
+    html = f"""
+    <h3>📋 凌晨下载 API 请求分析</h3>
+    <p style="font-size:12px;color:#7f8c8d;">日志来源: {api_log["log_file"]} | 状态: {api_log["status"]}</p>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>阶段</th>
+                <th>API 函数</th>
+                <th style="text-align:right">请求数</th>
+                <th style="text-align:right">返回行数</th>
+                <th style="text-align:right">行/请求</th>
+            </tr>
+        </thead>
+        <tbody>
+            {phase_rows}
+            <tr style="background:#f0f0f0;font-weight:bold;">
+                <td colspan="2">合计</td>
+                <td class="num">{api_log["total_requests"]:,}</td>
+                <td class="num">{api_log["total_rows"]:,}</td>
+                <td class="num">{api_log["total_rows"]/api_log["total_requests"]:.1f}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>📊 K 线数据按频率分布</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>频率</th>
+                <th style="text-align:right">请求数</th>
+                <th style="text-align:right">返回行数</th>
+                <th style="text-align:right">行/请求</th>
+            </tr>
+        </thead>
+        <tbody>
+            {kline_rows}
+        </tbody>
+    </table>
+
+    <p style="font-size:13px;margin-top:12px;">
+        <strong>空结果请求 (rows=0):</strong> {api_log["zero_rows"]} 次 
+        <span style="color:#7f8c8d;">(新股/停牌/退市)</span>
+    </p>
+    """
+    return html
+
+# ---------------------------------------------------------------------------
 # Email Generation & Sending
 # ---------------------------------------------------------------------------
 def build_email(sender, start_time, end_time, today_requests, total_requests,
-                blacklist_status, blacklist_detail, table_rows, api_req):
+                blacklist_status, blacklist_detail, table_rows, api_req, api_analysis_html=""):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"BaoStock 数据下载日报 ({date.today().strftime('%Y-%m-%d')})"
     msg["From"] = sender
@@ -429,6 +616,8 @@ def build_email(sender, start_time, end_time, today_requests, total_requests,
             此邮件由 BaoStock 自动报告系统生成。<br>
             预估总量基于每只股票的实际 IPO 日期和交易日历精确计算，非统一起始日期估算。
         </p>
+
+        {api_analysis_html}
     </body>
     </html>
     """
@@ -471,10 +660,12 @@ def main():
     start_time, end_time = get_latest_download_times()
     blacklist_status, blacklist_detail = check_blacklist_status()
     table_rows, api_req = get_progress_table(conn, counts)
+    api_log = parse_api_request_log()
+    api_analysis_html = build_api_analysis_section(api_log) if api_log else ""
 
     msg = build_email(
         email_cfg["sender"], start_time, end_time, today_requests, total_requests,
-        blacklist_status, blacklist_detail, table_rows, api_req
+        blacklist_status, blacklist_detail, table_rows, api_req, api_analysis_html
     )
     send_email(email_cfg, msg)
     conn.close()
