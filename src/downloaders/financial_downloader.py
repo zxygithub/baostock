@@ -32,11 +32,29 @@ class FinancialDownloader(BaseDownloader):
         total_rows = 0
         current_year, current_quarter = get_current_quarter()
 
+        # Fetch IPO/delisting dates to skip invalid year ranges
+        stock_years = {}
+        if codes:
+            placeholders = ",".join("?" * len(codes))
+            rows = self.conn.execute(
+                f"SELECT code, ipo_date, out_date FROM stock_basic WHERE code IN ({placeholders})",
+                codes,
+            ).fetchall()
+            for code, ipo, out in rows:
+                ipo_y = int(ipo[:4]) if ipo and ipo[:4].isdigit() else start_year
+                out_y = int(out[:4]) if out and out[:4].isdigit() else end_year
+                stock_years[code] = (ipo_y, out_y)
+
         tasks = []
         skipped = 0
         for code in codes:
-            for year in range(start_year, end_year + 1):
-                # 如果指定了季度范围，且是单年份查询，使用指定范围
+            ipo_y, out_y = stock_years.get(code, (start_year, end_year))
+            eff_start = max(start_year, ipo_y)
+            eff_end = min(end_year, out_y)
+            if eff_start > eff_end:
+                continue
+
+            for year in range(eff_start, eff_end + 1):
                 if start_quarter is not None and end_quarter is not None and start_year == end_year:
                     quarters = list(range(start_quarter, end_quarter + 1))
                 else:
