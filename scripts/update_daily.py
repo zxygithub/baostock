@@ -78,9 +78,32 @@ def main():
             dl.download_index_weekly(start_date=index_start, end_date=kline_end_date)
             dl.download_index_monthly(start_date=index_start, end_date=kline_end_date)
 
-        logger.info("Updating stock daily K-line...")
+        logger.info("Updating stock K-line (daily/weekly/monthly)...")
         with KlineDownloader(str(DB_PATH), logger) as dl:
-            dl.download_daily_kline(codes, start_date=start_date, end_date=kline_end_date)
+            # 日线：仅更新到最近交易日
+            if kline_end_date and kline_end_date >= start_date:
+                logger.info(f"Updating daily K-line: {start_date} → {kline_end_date}")
+                dl.download_daily_kline(codes, start_date=start_date, end_date=kline_end_date)
+            else:
+                logger.info(f"No new trading day found. Skipping daily K-line update.")
+
+            # 周线/月线：不受交易日限制，始终拉取
+            weekly_start = (
+                datetime.strptime(db.get_max_date("all_stock_weekly") or "1990-12-19", "%Y-%m-%d")
+                + timedelta(days=1)
+            ).strftime("%Y-%m-%d")
+            monthly_start = (
+                datetime.strptime(db.get_max_date("all_stock_monthly") or "1990-12-19", "%Y-%m-%d")
+                + timedelta(days=1)
+            ).strftime("%Y-%m-%d")
+
+            if target_date >= weekly_start:
+                logger.info(f"Updating weekly K-line: {weekly_start} → {target_date}")
+                dl.download_weekly_kline(codes, start_date=weekly_start, end_date=target_date)
+
+            if target_date >= monthly_start:
+                logger.info(f"Updating monthly K-line: {monthly_start} → {target_date}")
+                dl.download_monthly_kline(codes, start_date=monthly_start, end_date=target_date)
     else:
         logger.info(f"No new trading data found on or before {target_date}. Skipping K-line update.")
 
