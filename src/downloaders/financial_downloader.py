@@ -93,6 +93,16 @@ class FinancialDownloader(BaseDownloader):
                 continue
             rows = fetch_all_rows(rs)
             if not rows:
+                # Write a null record so this (code, year, quarter) is marked
+                # as "seen" and won't be re-requested on future runs.
+                df = pd.DataFrame(
+                    [[code] + [pd.NA] * len(column_renames)],
+                    columns=["code"] + list(column_renames.values()),
+                )
+                df["year"] = year
+                df["quarter"] = quarter
+                batch_dfs.append(df)
+                time.sleep(FINANCIAL_SLEEP)
                 continue
 
             df = pd.DataFrame(rows, columns=rs.fields)
