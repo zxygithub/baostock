@@ -136,6 +136,7 @@ class BaseDownloader:
 
         if new_count >= self.DAILY_REQUEST_LIMIT:
             self._limit_exceeded = True
+            self._flush_pending_batches()
             self.logger.error(
                 f"今日 API 请求已达上限 ({new_count}/{self.DAILY_REQUEST_LIMIT})，"
                 f"为避免进入黑名单，程序已退出。请明日再试。"
@@ -190,6 +191,13 @@ class BaseDownloader:
             self._conn = None
         if not self._limit_exceeded:
             self.logout()
+
+    def _flush_pending_batches(self):
+        """Flush any in-memory batch data to DB before forced exit.
+        Override in subclasses that accumulate batch writes."""
+        if self._conn:
+            self._conn.commit()
+            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     def setup_signal_handler(self, checkpoint_path: Path | None = None):
         if checkpoint_path is None:

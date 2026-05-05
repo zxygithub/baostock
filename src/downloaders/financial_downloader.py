@@ -81,7 +81,8 @@ class FinancialDownloader(BaseDownloader):
             f"{total_possible} total checked"
         )
 
-        batch_dfs: list[pd.DataFrame] = []
+        self._batch_dfs: list[pd.DataFrame] = []
+        self._batch_table: str = table_name
         BATCH_FLUSH = 500
 
         for code, year, quarter in tqdm(tasks, desc=table_name):
@@ -101,7 +102,7 @@ class FinancialDownloader(BaseDownloader):
                 )
                 df["year"] = year
                 df["quarter"] = quarter
-                batch_dfs.append(df)
+                self._batch_dfs.append(df)
                 time.sleep(FINANCIAL_SLEEP)
                 continue
 
@@ -109,18 +110,19 @@ class FinancialDownloader(BaseDownloader):
             df.rename(columns=column_renames, inplace=True)
             df["year"] = year
             df["quarter"] = quarter
-            batch_dfs.append(df)
+            self._batch_dfs.append(df)
             total_rows += len(df)
             time.sleep(FINANCIAL_SLEEP)
 
-            if len(batch_dfs) >= BATCH_FLUSH:
-                combined = pd.concat(batch_dfs, ignore_index=True)
+            if len(self._batch_dfs) >= BATCH_FLUSH:
+                combined = pd.concat(self._batch_dfs, ignore_index=True)
                 self._batch_upsert(combined, table_name)
-                batch_dfs.clear()
+                self._batch_dfs.clear()
 
-        if batch_dfs:
-            combined = pd.concat(batch_dfs, ignore_index=True)
+        if self._batch_dfs:
+            combined = pd.concat(self._batch_dfs, ignore_index=True)
             self._batch_upsert(combined, table_name)
+            self._batch_dfs.clear()
 
         return total_rows
 
@@ -132,6 +134,15 @@ class FinancialDownloader(BaseDownloader):
             return {(r[0], r[1], r[2]) for r in rows}
         except Exception:
             return set()
+
+    def _flush_pending_batches(self):
+        batch_dfs = getattr(self, "_batch_dfs", None)
+        if batch_dfs:
+            combined = pd.concat(batch_dfs, ignore_index=True)
+            self._batch_upsert(combined, getattr(self, "_batch_table", "unknown"))
+            self._batch_dfs.clear()
+            self.logger.info("Flushed pending batch to DB before API limit exit")
+        super()._flush_pending_batches()
 
     def _batch_upsert(self, df: pd.DataFrame, table_name: str) -> None:
         if "update_time" not in df.columns:
