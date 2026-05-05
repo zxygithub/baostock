@@ -93,18 +93,19 @@ def test_phase_1_db_init():
         "sz50_stocks", "hs300_stocks", "zz500_stocks",
         "deposit_rate", "loan_rate", "reserve_ratio",
         "money_supply_month", "money_supply_year",
+        "request_count",
     }
-    
+
     if "shibor" in tables:
         raise AssertionError("shibor 表应当已被删除，但仍存在")
-    
+
     missing = expected_tables - tables
     extra = tables - expected_tables
     if missing:
         raise AssertionError(f"缺少表: {missing}")
     if extra:
         logger.warning(f"  额外表 (非预期): {extra}")
-    
+
     logger.info(f"  ✅ 共 {len(expected_tables)} 个表，全部创建成功")
 
 

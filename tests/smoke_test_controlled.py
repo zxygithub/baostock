@@ -92,6 +92,7 @@ def test_phase_1_db_init():
         "sz50_stocks", "hs300_stocks", "zz500_stocks",
         "deposit_rate", "loan_rate", "reserve_ratio",
         "money_supply_month", "money_supply_year",
+        "request_count",
     }
 
     if "shibor" in tables:
