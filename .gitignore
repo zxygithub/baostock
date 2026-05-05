@@ -144,3 +144,6 @@ tests/test_codes.txt
 .qwen/settings.json
 .gitignore
 .qwen/settings.json.orig
+
+# AI agent work directories
+.sisyphus/
