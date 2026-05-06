@@ -31,6 +31,7 @@ class FinancialDownloader(BaseDownloader):
         existing = self._get_existing_quarters(table_name)
         total_rows = 0
         current_year, current_quarter = get_current_quarter()
+        recent_years = {current_year, current_year - 1}
 
         # Fetch IPO/delisting dates to skip invalid year ranges
         stock_years = {}
@@ -94,15 +95,14 @@ class FinancialDownloader(BaseDownloader):
                 continue
             rows = fetch_all_rows(rs)
             if not rows:
-                # Write a null record so this (code, year, quarter) is marked
-                # as "seen" and won't be re-requested on future runs.
-                df = pd.DataFrame(
-                    [[code] + [pd.NA] * len(column_renames)],
-                    columns=["code"] + list(column_renames.values()),
-                )
-                df["year"] = year
-                df["quarter"] = quarter
-                self._batch_dfs.append(df)
+                if year not in recent_years:
+                    df = pd.DataFrame(
+                        [[code] + [pd.NA] * len(column_renames)],
+                        columns=["code"] + list(column_renames.values()),
+                    )
+                    df["year"] = year
+                    df["quarter"] = quarter
+                    self._batch_dfs.append(df)
                 time.sleep(FINANCIAL_SLEEP)
                 continue
 

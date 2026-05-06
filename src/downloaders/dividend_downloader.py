@@ -24,19 +24,71 @@ class DividendDownloader(BaseDownloader):
 
         total_rows = 0
         batch_sleep = get_batch_sleep()
-        for code in tqdm(codes, desc="Dividend"):
-            all_rows = []
-            for year in range(start_year, end_year + 1):
+        current_year = datetime.now().year
+        recent_years = {current_year, current_year - 1}
+
+        existing = self._get_existing_dividend_years()
+
+        stock_years = {}
+        if codes:
+            placeholders = ",".join("?" * len(codes))
+            rows = self.conn.execute(
+                f"SELECT code, ipo_date, out_date FROM stock_basic WHERE code IN ({placeholders})",
+                codes,
+            ).fetchall()
+            for code, ipo, out in rows:
+                ipo_y = int(ipo[:4]) if ipo and ipo[:4].isdigit() else start_year
+                out_y = int(out[:4]) if out and out[:4].isdigit() else end_year
+                stock_years[code] = (ipo_y, out_y)
+
+        tasks = []
+        skipped = 0
+        for code in codes:
+            ipo_y, out_y = stock_years.get(code, (start_year, end_year))
+            eff_start = max(start_year, ipo_y)
+            eff_end = min(end_year, out_y)
+            if eff_start > eff_end:
+                continue
+
+            for year in range(eff_start, eff_end + 1):
                 for year_type in ["report", "operate"]:
-                    rs = self._api_call(
-                        bs.query_dividend_data,
-                        code=code, year=str(year), yearType=year_type,
-                    )
-                    rows = fetch_all_rows(rs)
-                    for row in rows:
-                        all_rows.append(list(row) + [year, year_type])
+                    if year in recent_years:
+                        tasks.append((code, year, year_type))
+                    elif (code, year, year_type) not in existing:
+                        tasks.append((code, year, year_type))
+                    else:
+                        skipped += 1
+
+        total_possible = len(tasks) + skipped
+
+        if not tasks:
+            self.logger.info("Dividend: all up to date, skipping")
+            return 0
+
+        self.logger.info(
+            f"Dividend: {len(tasks)} tasks to download, "
+            f"{skipped} skipped (already exist), "
+            f"{total_possible} total checked"
+        )
+
+        for code, year, year_type in tqdm(tasks, desc="Dividend"):
+            all_rows = []
+            rs = self._api_call(
+                bs.query_dividend_data,
+                code=code, year=str(year), yearType=year_type,
+            )
+            rows = fetch_all_rows(rs)
+            for row in rows:
+                all_rows.append(list(row) + [year, year_type])
 
             if not all_rows:
+                if year not in recent_years:
+                    df = pd.DataFrame(
+                        [[code, '9999-01-01', year, year_type]],
+                        columns=['code', 'divid_operate_date', 'year', 'year_type']
+                    )
+                    df["update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    self.save_df(df, "dividend", if_exists="upsert")
                 time.sleep(batch_sleep)
                 continue
 
@@ -64,6 +116,15 @@ class DividendDownloader(BaseDownloader):
             total_rows += len(df)
             time.sleep(batch_sleep)
         return total_rows
+
+    def _get_existing_dividend_years(self) -> set[tuple[str, int, str]]:
+        try:
+            rows = self.conn.execute(
+                "SELECT code, year, year_type FROM dividend"
+            ).fetchall()
+            return {(r[0], r[1], r[2]) for r in rows}
+        except Exception:
+            return set()
 
     def download_adjust_factor(
         self,

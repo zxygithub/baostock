@@ -2,6 +2,7 @@ import baostock as bs
 import pandas as pd
 import logging
 import time
+from datetime import datetime
 from tqdm import tqdm
 
 from src.downloaders.base import BaseDownloader
@@ -21,7 +22,11 @@ class ReportDownloader(BaseDownloader):
 
         total_rows = 0
         batch_sleep = get_batch_sleep()
+        existing = self._get_existing_report_codes("performance_express")
+
         for code in tqdm(codes, desc="Performance express"):
+            if code in existing:
+                continue
             rs = self.query_with_retry(
                 bs.query_performance_express_report,
                 code=code,
@@ -30,6 +35,13 @@ class ReportDownloader(BaseDownloader):
             )
             rows = fetch_all_rows(rs)
             if not rows:
+                df = pd.DataFrame(
+                    [[code, '9999-01-01']],
+                    columns=['code', 'performance_exp_pub_date']
+                )
+                df["update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                self.save_df(df, "performance_express", if_exists="upsert")
+                time.sleep(batch_sleep)
                 continue
             df = pd.DataFrame(rows, columns=rs.fields)
             df.rename(
@@ -63,7 +75,11 @@ class ReportDownloader(BaseDownloader):
 
         total_rows = 0
         batch_sleep = get_batch_sleep()
+        existing = self._get_existing_report_codes("forecast_report")
+
         for code in tqdm(codes, desc="Forecast report"):
+            if code in existing:
+                continue
             rs = self.query_with_retry(
                 bs.query_forecast_report,
                 code=code,
@@ -72,6 +88,13 @@ class ReportDownloader(BaseDownloader):
             )
             rows = fetch_all_rows(rs)
             if not rows:
+                df = pd.DataFrame(
+                    [[code, '9999-01-01']],
+                    columns=['code', 'profit_forecast_exp_pub_date']
+                )
+                df["update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                self.save_df(df, "forecast_report", if_exists="upsert")
+                time.sleep(batch_sleep)
                 continue
             df = pd.DataFrame(rows, columns=rs.fields)
             df.rename(
@@ -89,6 +112,15 @@ class ReportDownloader(BaseDownloader):
             total_rows += len(df)
             time.sleep(batch_sleep)
         return total_rows
+
+    def _get_existing_report_codes(self, table_name: str) -> set[str]:
+        try:
+            rows = self.conn.execute(
+                f"SELECT code FROM {table_name}"
+            ).fetchall()
+            return {r[0] for r in rows}
+        except Exception:
+            return set()
 
     def download_all_reports(
         self,
