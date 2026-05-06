@@ -228,8 +228,8 @@ def get_precise_estimates(conn, counts):
     est["forecast_report"] = forecast_total
 
     est["index_daily"] = 8 * total_trading_days
-    est["index_weekly"] = 8 * (total_trading_days // 5) * 3
-    est["index_monthly"] = 8 * (total_trading_days // 21) * 3
+    est["index_weekly"] = 8 * (total_trading_days // 5)
+    est["index_monthly"] = 8 * (total_trading_days // 21)
 
     est["stock_basic"] = counts.get("stock_basic", 0) or 9000
     est["trade_dates"] = counts.get("trade_dates", 0) or 13000
