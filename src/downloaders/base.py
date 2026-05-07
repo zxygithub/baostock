@@ -342,3 +342,24 @@ class BaseDownloader:
             return {row[0] for row in cursor.fetchall()}
         except sqlite3.OperationalError:
             return set()
+
+    def get_stock_years(
+        self, codes: list[str], start_year: int, end_year: int
+    ) -> dict[str, tuple[int, int]]:
+        """Build a mapping of code -> (ipo_year, out_year) for IPO/delisting filtering.
+
+        Falls back to start_year/end_year when IPO/out dates are missing or invalid.
+        """
+        stock_years: dict[str, tuple[int, int]] = {}
+        if not codes:
+            return stock_years
+        placeholders = ",".join("?" * len(codes))
+        rows = self.conn.execute(
+            f"SELECT code, ipo_date, out_date FROM stock_basic WHERE code IN ({placeholders})",
+            codes,
+        ).fetchall()
+        for code, ipo, out in rows:
+            ipo_y = int(ipo[:4]) if ipo and ipo[:4].isdigit() else start_year
+            out_y = int(out[:4]) if out and out[:4].isdigit() else end_year
+            stock_years[code] = (ipo_y, out_y)
+        return stock_years
