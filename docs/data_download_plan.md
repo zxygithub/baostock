@@ -538,26 +538,20 @@ CREATE TABLE money_supply_month (
 
 ```sql
 CREATE TABLE money_supply_year (
-    stat_year       INTEGER PRIMARY KEY,
-    money_balance   REAL,               -- 货币供应量年底余额
-    -- 其他年度汇总字段...
+    stat_year   INTEGER PRIMARY KEY,
+    m0_year     REAL,               -- M0(年底余额, 亿元)
+    m0_year_yoy REAL,               -- M0同比
+    m1_year     REAL,               -- M1(年底余额, 亿元)
+    m1_year_yoy REAL,               -- M1同比
+    m2_year     REAL,               -- M2(年底余额, 亿元)
+    m2_year_yoy REAL,               -- M2同比
+    update_time TEXT                -- 数据下载时间
 );
 ```
 
-### 3.32 shibor — 银行间同业拆放利率
-
-```sql
-CREATE TABLE shibor (
-    pub_date        TEXT PRIMARY KEY,
-    shibor_1w       REAL,               -- 1周
-    shibor_2w       REAL,               -- 2周
-    shibor_1m       REAL,               -- 1个月
-    shibor_3m       REAL,               -- 3个月
-    shibor_6m       REAL,               -- 6个月
-    shibor_9m       REAL,               -- 9个月
-    shibor_1y       REAL                -- 1年
-);
-```
+> ~~### 3.32 shibor — 银行间同业拆放利率~~
+>
+> 已移除：BaoStock API 不提供 shibor 接口，该表已从计划中删除。
 
 ---
 
