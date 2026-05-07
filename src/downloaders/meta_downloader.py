@@ -6,6 +6,7 @@ import logging
 import time
 
 from src.downloaders.base import BaseDownloader
+from src.config import RENAME_META, RENAME_INDUSTRY
 from src.config_loader import get_batch_size, get_batch_sleep
 from src.utils.helpers import fetch_all_rows, setup_logging
 
@@ -29,7 +30,7 @@ class MetaDownloader(BaseDownloader):
         df = pd.DataFrame(
             rows, columns=["code", "code_name", "ipoDate", "outDate", "type", "status"]
         )
-        df = df.rename(columns={"ipoDate": "ipo_date", "outDate": "out_date"})
+        df = df.rename(columns=RENAME_META)
         self.save_df(df, "stock_basic", if_exists="replace")
         self.logger.info(f"Stock basic: {len(df)} rows")
         return len(df)
@@ -38,13 +39,7 @@ class MetaDownloader(BaseDownloader):
         rs = self._api_call(bs.query_stock_industry)
         rows = fetch_all_rows(rs)
         df = pd.DataFrame(rows, columns=rs.fields)
-        df.rename(
-            columns={
-                "updateDate": "update_date",
-                "industryClassification": "industry_classification",
-            },
-            inplace=True,
-        )
+        df.rename(columns=RENAME_INDUSTRY, inplace=True)
         self.save_df(df, "stock_industry", if_exists="replace")
         self.logger.info(f"Stock industry: {len(df)} rows")
         return len(df)

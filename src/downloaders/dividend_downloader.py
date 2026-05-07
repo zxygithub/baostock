@@ -6,6 +6,7 @@ from datetime import datetime
 from tqdm import tqdm
 
 from src.downloaders.base import BaseDownloader
+from src.config import RENAME_DIVIDEND, RENAME_ADJUST_FACTOR
 from src.config_loader import get_batch_sleep, get_financial_start_year
 from src.utils.helpers import fetch_all_rows
 
@@ -79,24 +80,7 @@ class DividendDownloader(BaseDownloader):
 
             columns = rs.fields + ["year", "year_type"]
             df = pd.DataFrame(all_rows, columns=columns)
-            df.rename(
-                columns={
-                    "dividPreNoticeDate": "divid_pre_notice_date",
-                    "dividAgmPumDate": "divid_agm_pum_date",
-                    "dividPlanAnnounceDate": "divid_plan_announce_date",
-                    "dividPlanDate": "divid_plan_date",
-                    "dividRegistDate": "divid_regist_date",
-                    "dividOperateDate": "divid_operate_date",
-                    "dividPayDate": "divid_pay_date",
-                    "dividStockMarketDate": "divid_stock_market_date",
-                    "dividCashPsBeforeTax": "divid_cash_ps_before_tax",
-                    "dividCashPsAfterTax": "divid_cash_ps_after_tax",
-                    "dividStocksPs": "divid_stocks_ps",
-                    "dividCashStock": "divid_cash_stock",
-                    "dividReserveToStockPs": "divid_reserve_to_stock_ps",
-                },
-                inplace=True,
-            )
+            df.rename(columns=RENAME_DIVIDEND, inplace=True)
             self.save_df(df, "dividend", if_exists="upsert")
             total_rows += len(df)
             time.sleep(batch_sleep)
@@ -167,15 +151,7 @@ class DividendDownloader(BaseDownloader):
                 time.sleep(batch_sleep)
                 continue
             df = pd.DataFrame(rows, columns=rs.fields)
-            df.rename(
-                columns={
-                    "dividOperateDate": "divid_operate_date",
-                    "foreAdjustFactor": "fore_adjust_factor",
-                    "backAdjustFactor": "back_adjust_factor",
-                    "adjustFactor": "adjust_factor",
-                },
-                inplace=True,
-            )
+            df.rename(columns=RENAME_ADJUST_FACTOR, inplace=True)
             self.save_df(df, "adjust_factor", if_exists="upsert")
             total_rows += len(df)
             time.sleep(batch_sleep)

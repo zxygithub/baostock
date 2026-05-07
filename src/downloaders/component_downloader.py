@@ -6,6 +6,7 @@ import logging
 from datetime import datetime
 
 from src.downloaders.base import BaseDownloader
+from src.config import RENAME_COMPONENT
 from src.utils.helpers import fetch_all_rows
 
 
@@ -17,7 +18,7 @@ class ComponentDownloader(BaseDownloader):
         rs = self._api_call(bs.query_sz50_stocks)
         rows = fetch_all_rows(rs)
         df = pd.DataFrame(rows, columns=rs.fields)
-        df = df.rename(columns={"updateDate": "update_date"})
+        df = df.rename(columns=RENAME_COMPONENT)
         self.save_df(df, "sz50_stocks", if_exists="replace")
         self.logger.info(f"SZ50 constituent stocks download complete: {len(df)} rows")
         return len(df)
@@ -27,7 +28,7 @@ class ComponentDownloader(BaseDownloader):
         rs = self._api_call(bs.query_hs300_stocks)
         rows = fetch_all_rows(rs)
         df = pd.DataFrame(rows, columns=rs.fields)
-        df = df.rename(columns={"updateDate": "update_date"})
+        df = df.rename(columns=RENAME_COMPONENT)
         self.save_df(df, "hs300_stocks", if_exists="replace")
         self.logger.info(f"HS300 constituent stocks download complete: {len(df)} rows")
         return len(df)
@@ -37,7 +38,7 @@ class ComponentDownloader(BaseDownloader):
         rs = self._api_call(bs.query_zz500_stocks)
         rows = fetch_all_rows(rs)
         df = pd.DataFrame(rows, columns=rs.fields)
-        df = df.rename(columns={"updateDate": "update_date"})
+        df = df.rename(columns=RENAME_COMPONENT)
         self.save_df(df, "zz500_stocks", if_exists="replace")
         self.logger.info(f"ZZ500 constituent stocks download complete: {len(df)} rows")
         return len(df)

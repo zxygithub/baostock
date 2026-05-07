@@ -9,6 +9,7 @@ from src.config import (
     DAILY_KLINE_FIELDS,
     WEEKLY_MONTHLY_KLINE_FIELDS,
     MINUTE_KLINE_FIELDS,
+    RENAME_KLINE,
 )
 from src.config_loader import (
     get_batch_size,
@@ -81,16 +82,8 @@ class KlineDownloader(BaseDownloader):
                 continue
 
             df = pd.DataFrame(all_rows, columns=fields.split(","))
-            rename_map = {
-                "pctChg": "pct_chg",
-                "peTTM": "pe_ttm",
-                "pbMRQ": "pb_mrq",
-                "psTTM": "ps_ttm",
-                "pcfNcfTTM": "pcf_ncf_ttm",
-                "isST": "is_st",
-            }
             df = df.rename(
-                columns={k: v for k, v in rename_map.items() if k in df.columns}
+                columns={k: v for k, v in RENAME_KLINE.items() if k in df.columns}
             )
 
             for col in ["open", "high", "low", "close", "volume", "amount", "preclose"]:

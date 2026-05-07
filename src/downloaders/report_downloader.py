@@ -6,6 +6,7 @@ from datetime import datetime
 from tqdm import tqdm
 
 from src.downloaders.base import BaseDownloader
+from src.config import RENAME_PERFORMANCE_EXPRESS, RENAME_FORECAST_REPORT
 from src.config_loader import get_reports_start_date, get_batch_sleep
 from src.utils.helpers import fetch_all_rows
 
@@ -41,21 +42,7 @@ class ReportDownloader(BaseDownloader):
                 time.sleep(batch_sleep)
                 continue
             df = pd.DataFrame(rows, columns=rs.fields)
-            df.rename(
-                columns={
-                    "performanceExpPubDate": "performance_exp_pub_date",
-                    "performanceExpStatDate": "performance_exp_stat_date",
-                    "performanceExpUpdateDate": "performance_exp_update_date",
-                    "performanceExpressTotalAsset": "total_asset",
-                    "performanceExpressNetAsset": "net_asset",
-                    "performanceExpressEPSChgPct": "eps_chg_pct",
-                    "performanceExpressROEWa": "roe_wa",
-                    "performanceExpressEPSDiluted": "eps_diluted",
-                    "performanceExpressGRYOY": "gr_yoy",
-                    "performanceExpressOPYOY": "op_yoy",
-                },
-                inplace=True,
-            )
+            df.rename(columns=RENAME_PERFORMANCE_EXPRESS, inplace=True)
             self.save_df(df, "performance_express", if_exists="upsert")
             total_rows += len(df)
             time.sleep(batch_sleep)
@@ -91,17 +78,7 @@ class ReportDownloader(BaseDownloader):
                 time.sleep(batch_sleep)
                 continue
             df = pd.DataFrame(rows, columns=rs.fields)
-            df.rename(
-                columns={
-                    "profitForcastExpPubDate": "profit_forecast_exp_pub_date",
-                    "profitForcastExpStatDate": "profit_forecast_exp_stat_date",
-                    "profitForcastType": "profit_forecast_type",
-                    "profitForcastAbstract": "profit_forecast_abstract",
-                    "profitForcastChgPctUp": "profit_forecast_chg_pct_up",
-                    "profitForcastChgPctDwn": "profit_forecast_chg_pct_down",
-                },
-                inplace=True,
-            )
+            df.rename(columns=RENAME_FORECAST_REPORT, inplace=True)
             self.save_df(df, "forecast_report", if_exists="upsert")
             total_rows += len(df)
             time.sleep(batch_sleep)

@@ -4,6 +4,13 @@ import logging
 import time
 
 from src.downloaders.base import BaseDownloader
+from src.config import (
+    RENAME_DEPOSIT_RATE,
+    RENAME_LOAN_RATE,
+    RENAME_RESERVE_RATIO,
+    RENAME_MONEY_SUPPLY_MONTH,
+    RENAME_MONEY_SUPPLY_YEAR,
+)
 from src.config_loader import get_batch_sleep
 from src.utils.helpers import fetch_all_rows
 
@@ -30,22 +37,7 @@ class MacroDownloader(BaseDownloader):
                 "installmentFixedDepositRate5Year",
             ],
         )
-        df.rename(
-            columns={
-                "pubDate": "pub_date",
-                "demandDepositRate": "demand_deposit_rate",
-                "fixedDepositRate3Month": "fixed_deposit_rate_3_month",
-                "fixedDepositRate6Month": "fixed_deposit_rate_6_month",
-                "fixedDepositRate1Year": "fixed_deposit_rate_1_year",
-                "fixedDepositRate2Year": "fixed_deposit_rate_2_year",
-                "fixedDepositRate3Year": "fixed_deposit_rate_3_year",
-                "fixedDepositRate5Year": "fixed_deposit_rate_5_year",
-                "installmentFixedDepositRate1Year": "installment_fixed_rate_1_year",
-                "installmentFixedDepositRate3Year": "installment_fixed_rate_3_year",
-                "installmentFixedDepositRate5Year": "installment_fixed_rate_5_year",
-            },
-            inplace=True,
-        )
+        df.rename(columns=RENAME_DEPOSIT_RATE, inplace=True)
         self.save_df(df, "deposit_rate", if_exists="upsert")
         return len(df)
 
@@ -67,19 +59,7 @@ class MacroDownloader(BaseDownloader):
                 "mortgateRateAbove5Year",
             ],
         )
-        df.rename(
-            columns={
-                "pubDate": "pub_date",
-                "loanRate6Month": "loan_rate_6_month",
-                "loanRate6MonthTo1Year": "loan_rate_6m_to_1y",
-                "loanRate1YearTo3Year": "loan_rate_1y_to_3y",
-                "loanRate3YearTo5Year": "loan_rate_3y_to_5y",
-                "loanRateAbove5Year": "loan_rate_above_5y",
-                "mortgateRateBelow5Year": "mortgage_rate_below_5y",
-                "mortgateRateAbove5Year": "mortgage_rate_above_5y",
-            },
-            inplace=True,
-        )
+        df.rename(columns=RENAME_LOAN_RATE, inplace=True)
         self.save_df(df, "loan_rate", if_exists="upsert")
         return len(df)
 
@@ -99,17 +79,7 @@ class MacroDownloader(BaseDownloader):
                 "mediumInstitutionsRatioAfter",
             ],
         )
-        df.rename(
-            columns={
-                "pubDate": "pub_date",
-                "effectiveDate": "effective_date",
-                "bigInstitutionsRatioPre": "big_institutions_ratio_pre",
-                "bigInstitutionsRatioAfter": "big_institutions_ratio_after",
-                "mediumInstitutionsRatioPre": "medium_institutions_ratio_pre",
-                "mediumInstitutionsRatioAfter": "medium_institutions_ratio_after",
-            },
-            inplace=True,
-        )
+        df.rename(columns=RENAME_RESERVE_RATIO, inplace=True)
         self.save_df(df, "reserve_ratio", if_exists="upsert")
         return len(df)
 
@@ -134,22 +104,7 @@ class MacroDownloader(BaseDownloader):
                 "m2ChainRelative",
             ],
         )
-        df.rename(
-            columns={
-                "statYear": "stat_year",
-                "statMonth": "stat_month",
-                "m0Month": "m0_month",
-                "m0YOY": "m0_yoy",
-                "m0ChainRelative": "m0_chain",
-                "m1Month": "m1_month",
-                "m1YOY": "m1_yoy",
-                "m1ChainRelative": "m1_chain",
-                "m2Month": "m2_month",
-                "m2YOY": "m2_yoy",
-                "m2ChainRelative": "m2_chain",
-            },
-            inplace=True,
-        )
+        df.rename(columns=RENAME_MONEY_SUPPLY_MONTH, inplace=True)
         self.save_df(df, "money_supply_month", if_exists="upsert")
         return len(df)
 
@@ -161,18 +116,7 @@ class MacroDownloader(BaseDownloader):
         if not rows:
             return 0
         df = pd.DataFrame(rows, columns=rs.fields)
-        df.rename(
-            columns={
-                "statYear": "stat_year",
-                "m0Year": "m0_year",
-                "m0YearYOY": "m0_year_yoy",
-                "m1Year": "m1_year",
-                "m1YearYOY": "m1_year_yoy",
-                "m2Year": "m2_year",
-                "m2YearYOY": "m2_year_yoy",
-            },
-            inplace=True,
-        )
+        df.rename(columns=RENAME_MONEY_SUPPLY_YEAR, inplace=True)
         self.save_df(df, "money_supply_year", if_exists="upsert")
         return len(df)
 

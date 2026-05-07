@@ -9,6 +9,7 @@ from src.config import (
     INDEX_CODES,
     INDEX_DAILY_FIELDS,
     INDEX_WEEKLY_MONTHLY_FIELDS,
+    RENAME_KLINE,
 )
 from src.config_loader import get_index_kline_start_date, get_batch_sleep
 from src.utils.helpers import fetch_all_rows
@@ -41,7 +42,7 @@ class IndexDownloader(BaseDownloader):
             if not rows:
                 continue
             df = pd.DataFrame(rows, columns=INDEX_DAILY_FIELDS.split(","))
-            df = df.rename(columns={"pctChg": "pct_chg"})
+            df = df.rename(columns=RENAME_KLINE)
             self.save_df(df, "index_daily", if_exists="upsert")
             total_rows += len(df)
             time.sleep(batch_sleep)
@@ -73,7 +74,7 @@ class IndexDownloader(BaseDownloader):
             if not rows:
                 continue
             df = pd.DataFrame(rows, columns=INDEX_WEEKLY_MONTHLY_FIELDS.split(","))
-            df = df.rename(columns={"pctChg": "pct_chg"})
+            df = df.rename(columns=RENAME_KLINE)
             self.save_df(df, "index_weekly", if_exists="upsert")
             total_rows += len(df)
             time.sleep(batch_sleep)
@@ -105,7 +106,7 @@ class IndexDownloader(BaseDownloader):
             if not rows:
                 continue
             df = pd.DataFrame(rows, columns=INDEX_WEEKLY_MONTHLY_FIELDS.split(","))
-            df = df.rename(columns={"pctChg": "pct_chg"})
+            df = df.rename(columns=RENAME_KLINE)
             self.save_df(df, "index_monthly", if_exists="upsert")
             total_rows += len(df)
             time.sleep(batch_sleep)

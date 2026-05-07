@@ -6,7 +6,15 @@ from datetime import datetime
 from tqdm import tqdm
 
 from src.downloaders.base import BaseDownloader
-from src.config import FINANCIAL_SLEEP
+from src.config import (
+    FINANCIAL_SLEEP,
+    RENAME_PROFIT,
+    RENAME_OPERATION,
+    RENAME_GROWTH,
+    RENAME_BALANCE,
+    RENAME_CASH_FLOW,
+    RENAME_DUPONT,
+)
 from src.config_loader import get_financial_start_year
 from src.utils.helpers import fetch_all_rows, get_current_quarter
 
@@ -172,18 +180,7 @@ class FinancialDownloader(BaseDownloader):
         return self._download_quarterly_data(
             codes=codes,
             query_func=bs.query_profit_data,
-            column_renames={
-                "pubDate": "pub_date",
-                "statDate": "stat_date",
-                "roeAvg": "roe_avg",
-                "npMargin": "np_margin",
-                "gpMargin": "gp_margin",
-                "netProfit": "net_profit",
-                "epsTTM": "eps_ttm",
-                "MBRevenue": "mb_revenue",
-                "totalShare": "total_share",
-                "liqaShare": "liqa_share",
-            },
+            column_renames=RENAME_PROFIT,
             table_name="profit_data",
             start_year=start_year,
             end_year=end_year,
@@ -202,16 +199,7 @@ class FinancialDownloader(BaseDownloader):
         return self._download_quarterly_data(
             codes=codes,
             query_func=bs.query_operation_data,
-            column_renames={
-                "pubDate": "pub_date",
-                "statDate": "stat_date",
-                "NRTurnRatio": "nr_turn_ratio",
-                "NRTurnDays": "nr_turn_days",
-                "INVTurnRatio": "inv_turn_ratio",
-                "INVTurnDays": "inv_turn_days",
-                "CATurnRatio": "ca_turn_ratio",
-                "AssetTurnRatio": "asset_turn_ratio",
-            },
+            column_renames=RENAME_OPERATION,
             table_name="operation_data",
             start_year=start_year,
             end_year=end_year,
@@ -230,15 +218,7 @@ class FinancialDownloader(BaseDownloader):
         return self._download_quarterly_data(
             codes=codes,
             query_func=bs.query_growth_data,
-            column_renames={
-                "pubDate": "pub_date",
-                "statDate": "stat_date",
-                "YOYEquity": "yoy_equity",
-                "YOYAsset": "yoy_asset",
-                "YOYNI": "yoy_ni",
-                "YOYEPSBasic": "yoy_eps_basic",
-                "YOYPNI": "yoy_pni",
-            },
+            column_renames=RENAME_GROWTH,
             table_name="growth_data",
             start_year=start_year,
             end_year=end_year,
@@ -257,16 +237,7 @@ class FinancialDownloader(BaseDownloader):
         return self._download_quarterly_data(
             codes=codes,
             query_func=bs.query_balance_data,
-            column_renames={
-                "pubDate": "pub_date",
-                "statDate": "stat_date",
-                "currentRatio": "current_ratio",
-                "quickRatio": "quick_ratio",
-                "cashRatio": "cash_ratio",
-                "YOYLiability": "yoy_liability",
-                "liabilityToAsset": "liability_to_asset",
-                "assetToEquity": "asset_to_equity",
-            },
+            column_renames=RENAME_BALANCE,
             table_name="balance_data",
             start_year=start_year,
             end_year=end_year,
@@ -285,17 +256,7 @@ class FinancialDownloader(BaseDownloader):
         return self._download_quarterly_data(
             codes=codes,
             query_func=bs.query_cash_flow_data,
-            column_renames={
-                "pubDate": "pub_date",
-                "statDate": "stat_date",
-                "CAToAsset": "ca_to_asset",
-                "NCAToAsset": "nca_to_asset",
-                "tangibleAssetToAsset": "tangible_asset_to_asset",
-                "ebitToInterest": "ebit_to_interest",
-                "CFOToOR": "cfo_to_or",
-                "CFOToNP": "cfo_to_np",
-                "CFOToGr": "cfo_to_gr",
-            },
+            column_renames=RENAME_CASH_FLOW,
             table_name="cash_flow_data",
             start_year=start_year,
             end_year=end_year,
@@ -314,18 +275,7 @@ class FinancialDownloader(BaseDownloader):
         return self._download_quarterly_data(
             codes=codes,
             query_func=bs.query_dupont_data,
-            column_renames={
-                "pubDate": "pub_date",
-                "statDate": "stat_date",
-                "dupontROE": "dupont_roe",
-                "dupontAssetStoEquity": "dupont_asset_to_equity",
-                "dupontAssetTurn": "dupont_asset_turn",
-                "dupontPnitoni": "dupont_pni_to_ni",
-                "dupontNitogr": "dupont_ni_to_gr",
-                "dupontTaxBurden": "dupont_tax_burden",
-                "dupontIntburden": "dupont_int_burden",
-                "dupontEbittogr": "dupont_ebit_to_gr",
-            },
+            column_renames=RENAME_DUPONT,
             table_name="dupont_data",
             start_year=start_year,
             end_year=end_year,
