@@ -57,6 +57,10 @@ class DividendDownloader(BaseDownloader):
             f"{total_possible} total checked"
         )
 
+        # Batch placeholder writes to reduce individual transactions
+        placeholder_dfs = []
+        BATCH_SIZE = 50
+
         for code, year, year_type in tqdm(tasks, desc="Dividend"):
             all_rows = []
             rs = self._api_call(
@@ -73,8 +77,7 @@ class DividendDownloader(BaseDownloader):
                         [[code, '9999-01-01', year, year_type]],
                         columns=['code', 'divid_operate_date', 'year', 'year_type']
                     )
-                    df["update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    self.save_df(df, "dividend", if_exists="upsert")
+                    placeholder_dfs.append(df)
                 time.sleep(batch_sleep)
                 continue
 
@@ -84,6 +87,21 @@ class DividendDownloader(BaseDownloader):
             self.save_df(df, "dividend", if_exists="upsert")
             total_rows += len(df)
             time.sleep(batch_sleep)
+
+            # Flush placeholders in batches
+            if len(placeholder_dfs) >= BATCH_SIZE:
+                combined = pd.concat(placeholder_dfs, ignore_index=True)
+                combined["update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                self.save_df(combined, "dividend", if_exists="upsert")
+                placeholder_dfs.clear()
+
+        # Flush remaining placeholders
+        if placeholder_dfs:
+            combined = pd.concat(placeholder_dfs, ignore_index=True)
+            combined["update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.save_df(combined, "dividend", if_exists="upsert")
+            placeholder_dfs.clear()
+
         return total_rows
 
     def _find_missing_dividend(

@@ -19,6 +19,7 @@ class DBManager:
             self._conn = sqlite3.connect(self.db_path)
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA foreign_keys=ON")
+            self._conn.execute("PRAGMA busy_timeout=30000")  # Wait up to 30s for locks
         return self._conn
 
     def init_all_tables(self) -> None:

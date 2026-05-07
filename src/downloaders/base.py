@@ -113,26 +113,44 @@ class BaseDownloader:
         db.close()
 
     def _increment_request_count(self):
-        """Increment today's API request count by 1, using direct SQL (方案C).
+        """Increment today's API request count by 1, using the downloader's existing connection.
 
-        Avoids DBManager/migrate_schema() overhead by executing raw SQL directly.
-        Uses INSERT ... ON CONFLICT DO UPDATE to atomically insert or increment.
+        Uses self.conn (the single WAL-enabled connection) instead of opening
+        a new sqlite3.connect() to avoid "database is locked" errors when
+        concurrent write transactions occur on the same database file.
         """
         from datetime import date, datetime
 
         today = date.today().isoformat()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn = sqlite3.connect(str(self.db_path))
-        conn.execute(
+        self.conn.execute(
             "INSERT INTO request_count (date, count, update_time) VALUES (?, 1, ?) "
             "ON CONFLICT(date) DO UPDATE SET count = count + 1, update_time = excluded.update_time",
             (today, now),
         )
-        conn.commit()
-        cursor = conn.execute("SELECT count FROM request_count WHERE date = ?", (today,))
+        # Do NOT commit here - let the caller manage the transaction.
+        # The request_count increment is "fire-and-forget" and will be
+        # committed along with the next explicit self.conn.commit().
+
+    def _api_call(self, func, *args, **kwargs):
+        """Wrapper for direct baostock API calls that increments request count."""
+        self.ensure_login()
+        func_name = getattr(func, "__name__", str(func))
+        params = _build_params_str(func, *args, **kwargs)
+        rs = func(*args, **kwargs)
+        self._increment_request_count()
+        self._check_limit_after_increment()
+        return _ApiResultWrapper(rs, func_name, params, self.logger)
+
+    def _check_limit_after_increment(self):
+        """Check if the request limit has been reached after incrementing."""
+        from datetime import date
+
+        today = date.today().isoformat()
+        cursor = self.conn.execute("SELECT count FROM request_count WHERE date = ?", (today,))
         row = cursor.fetchone()
         new_count = row[0] if row else 0
-        conn.close()
+        self.conn.commit()  # Commit the request_count increment
 
         if new_count >= self.DAILY_REQUEST_LIMIT:
             self._limit_exceeded = True
@@ -142,15 +160,6 @@ class BaseDownloader:
                 f"为避免进入黑名单，程序已退出。请明日再试。"
             )
             raise SystemExit(1)
-
-    def _api_call(self, func, *args, **kwargs):
-        """Wrapper for direct baostock API calls that increments request count."""
-        self.ensure_login()
-        func_name = getattr(func, "__name__", str(func))
-        params = _build_params_str(func, *args, **kwargs)
-        rs = func(*args, **kwargs)
-        self._increment_request_count()
-        return _ApiResultWrapper(rs, func_name, params, self.logger)
 
     def login(self):
         lg = bs.login()
@@ -183,6 +192,7 @@ class BaseDownloader:
             self._conn = sqlite3.connect(str(self.db_path))
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA foreign_keys=ON")
+            self._conn.execute("PRAGMA busy_timeout=30000")  # Wait up to 30s for locks
         return self._conn
 
     def close(self):
@@ -261,6 +271,7 @@ class BaseDownloader:
                 rs = query_func(**kwargs)
                 # 无论成功失败都计数，因为服务器端已计数
                 self._increment_request_count()
+                self._check_limit_after_increment()
                 func_name = getattr(query_func, "__name__", str(query_func))
                 params = _build_params_str(query_func, **kwargs)
                 wrapped = _ApiResultWrapper(rs, func_name, params, self.logger)
