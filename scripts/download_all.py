@@ -156,7 +156,6 @@ def main():
                             codes,
                             frequency=freq,
                             start_date=args.start_date or get_kline_start_date("minute"),
-                            end_date=args.end_date or kline_end_date,
                         )
                         logger.info(f"  {freq}min: {count} rows")
     else:
