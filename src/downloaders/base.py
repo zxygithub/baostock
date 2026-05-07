@@ -145,6 +145,7 @@ class BaseDownloader:
 
     def _api_call(self, func, *args, **kwargs):
         """Wrapper for direct baostock API calls that increments request count."""
+        self.ensure_login()
         func_name = getattr(func, "__name__", str(func))
         params = _build_params_str(func, *args, **kwargs)
         rs = func(*args, **kwargs)
