@@ -95,7 +95,12 @@ class DBManager:
         """)
 
     def _create_all_stock(self, conn: sqlite3.Connection) -> None:
-        """证券代码查询:query_all_stock()"""
+        """证券代码查询:query_all_stock()
+
+        TODO: No downloader currently populates this table.
+        The only write path is in tests/smoke_test.py (test_phase_10).
+        To implement: add query_all_stock() to MetaDownloader or a dedicated script.
+        """
         conn.execute("""
             CREATE TABLE IF NOT EXISTS all_stock (
                 code           TEXT NOT NULL,   -- 证券代码
