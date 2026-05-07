@@ -57,18 +57,33 @@ def get_email_config(cfg):
         print("Email reporting is disabled. Set email.enabled: true in config.yaml")
         sys.exit(0)
     
-    # 优先使用环境变量，保护敏感信息
-    email_cfg["sender"] = os.getenv("EMAIL_SENDER", email_cfg.get("sender", ""))
-    email_cfg["password"] = os.getenv("EMAIL_PASSWORD", email_cfg.get("password", ""))
-    email_cfg["receiver"] = os.getenv("EMAIL_RECEIVER", email_cfg.get("receiver", ""))
+    # All sensitive credentials from .env
+    smtp_server = os.getenv("EMAIL_SMTP_SERVER", "")
+    smtp_port = os.getenv("EMAIL_SMTP_PORT", "465")
+    sender = os.getenv("EMAIL_SENDER", "")
+    password = os.getenv("EMAIL_PASSWORD", "")
+    receiver = os.getenv("EMAIL_RECEIVER", "")
     
-    required = ["smtp_server", "smtp_port", "sender", "password", "receiver"]
-    missing = [k for k in required if not email_cfg.get(k)]
+    required = {
+        "smtp_server": smtp_server,
+        "smtp_port": smtp_port,
+        "sender": sender,
+        "password": password,
+        "receiver": receiver,
+    }
+    missing = [k for k, v in required.items() if not v]
     if missing:
-        print(f"Missing email config keys: {missing}")
-        print("Please set them in config.yaml or environment variables (EMAIL_SENDER, EMAIL_PASSWORD, etc.)")
+        print(f"Missing email config in .env: {', '.join(missing)}")
+        print("Please set EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT, EMAIL_SENDER, etc. in .env")
         sys.exit(1)
-    return email_cfg
+    
+    return {
+        "smtp_server": smtp_server,
+        "smtp_port": int(smtp_port),
+        "sender": sender,
+        "password": password,
+        "receiver": receiver,
+    }
 
 # ---------------------------------------------------------------------------
 # Database Statistics

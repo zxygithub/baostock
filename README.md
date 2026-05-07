@@ -95,11 +95,11 @@ baostock/
 
 ## ⚙️ 配置说明
 
-项目采用**双配置文件**设计，职责清晰：
+项目采用**三层次配置**设计，职责清晰：
 
 ### config.yaml（用户配置）
 
-用户可以自由修改的运行参数：
+用户可以自由修改的运行参数（敏感凭据请使用 `.env`）：
 
 ```yaml
 # API 配置
@@ -142,6 +142,23 @@ stocks:
   filter: "type=1 AND status=1"  # 股票筛选条件（SQL WHERE 子句）
   batch_size: 200                # 每批处理的股票数量
   batch_sleep: 2                 # 批次间休眠时间（秒）
+
+# 邮件日报开关（敏感凭据在 .env 中配置）
+email:
+  enabled: true
+```
+
+### .env（敏感凭据）
+
+邮箱密码等敏感信息通过 `.env` 文件配置，已加入 `.gitignore` 不会被提交：
+
+```bash
+# 复制 .env.example 为 .env 并填入真实凭据
+EMAIL_SMTP_SERVER="smtp.qq.com"
+EMAIL_SMTP_PORT="465"
+EMAIL_SENDER="your_email@qq.com"
+EMAIL_PASSWORD="your_smtp_authorization_code"
+EMAIL_RECEIVER="your_receiver_email@qq.com"
 ```
 
 ### src/config.py（技术常量）
@@ -167,7 +184,8 @@ from src.config_loader import (
 ```
 
 **修改建议**：
-- 用户只需编辑 `config.yaml` 即可控制所有下载行为
+- 用户只需编辑 `config.yaml` 即可控制所有下载开关和日期范围
+- `.env` 用于存储所有敏感凭据（邮箱 SMTP 等）
 - `config.py` 仅在需要修改字段定义或内部参数时才需调整
 
 ## 📊 数据库设计
@@ -254,6 +272,10 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-05-07**：
+  - 移除 `config.yaml` 中的邮箱明文密码字段，敏感凭据仅从 `.env` 读取
+  - `daily_report.py` 邮件配置全面迁移至 `.env`，不再回退到 `config.yaml`
+  - `.env.example` 新增 `EMAIL_SMTP_SERVER` 和 `EMAIL_SMTP_PORT` 字段
 - **2026-04-24**：
   - 新增黑名单检测脚本 (`check_blacklist.py`)
   - 新增邮件日报功能 (`daily_report.py`)

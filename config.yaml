@@ -80,10 +80,7 @@ stocks:
 # ---------------------------------------------------------------------------
 # Email reporting (for daily_report.py)
 # ---------------------------------------------------------------------------
+# Sensitive credentials (smtp_server, smtp_port, sender, password, receiver)
+# should be set in .env file. Only the enabled switch stays here.
 email:
   enabled: true
-  smtp_server: "smtp.qq.com"
-  smtp_port: 465
-  sender: "your_email@qq.com"
-  password: "your_smtp_authorization_code"
-  receiver: "your_receiver_email@qq.com"
