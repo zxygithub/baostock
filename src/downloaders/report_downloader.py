@@ -22,11 +22,8 @@ class ReportDownloader(BaseDownloader):
 
         total_rows = 0
         batch_sleep = get_batch_sleep()
-        existing = self._get_existing_report_codes("performance_express")
 
         for code in tqdm(codes, desc="Performance express"):
-            if code in existing:
-                continue
             rs = self.query_with_retry(
                 bs.query_performance_express_report,
                 code=code,
@@ -75,11 +72,8 @@ class ReportDownloader(BaseDownloader):
 
         total_rows = 0
         batch_sleep = get_batch_sleep()
-        existing = self._get_existing_report_codes("forecast_report")
 
         for code in tqdm(codes, desc="Forecast report"):
-            if code in existing:
-                continue
             rs = self.query_with_retry(
                 bs.query_forecast_report,
                 code=code,
@@ -112,15 +106,6 @@ class ReportDownloader(BaseDownloader):
             total_rows += len(df)
             time.sleep(batch_sleep)
         return total_rows
-
-    def _get_existing_report_codes(self, table_name: str) -> set[str]:
-        try:
-            rows = self.conn.execute(
-                f"SELECT code FROM {table_name}"
-            ).fetchall()
-            return {r[0] for r in rows}
-        except Exception:
-            return set()
 
     def download_all_reports(
         self,
