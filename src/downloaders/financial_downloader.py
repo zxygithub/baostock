@@ -28,15 +28,12 @@ class FinancialDownloader(BaseDownloader):
         if end_year is None:
             end_year = get_current_quarter()[0]
 
-        existing = self._get_existing_quarters(table_name)
+        stock_years = self.get_stock_years(codes, start_year, end_year)
         total_rows = 0
         current_year, current_quarter = get_current_quarter()
         recent_years = {current_year, current_year - 1}
 
-        stock_years = self.get_stock_years(codes, start_year, end_year)
-
-        tasks = []
-        skipped = 0
+        candidates = []
         for code in codes:
             ipo_y, out_y = stock_years.get(code, (start_year, end_year))
             eff_start = max(start_year, ipo_y)
@@ -54,11 +51,9 @@ class FinancialDownloader(BaseDownloader):
                         else list(range(1, current_quarter + 1))
                     )
                 for quarter in quarters:
-                    if (code, year, quarter) not in existing:
-                        tasks.append((code, year, quarter))
-                    else:
-                        skipped += 1
+                    candidates.append((code, year, quarter))
 
+        tasks, skipped = self._find_missing_quarters(table_name, candidates)
         total_possible = len(tasks) + skipped
 
         if not tasks:
@@ -115,14 +110,33 @@ class FinancialDownloader(BaseDownloader):
 
         return total_rows
 
-    def _get_existing_quarters(self, table_name: str) -> set[tuple[str, int, int]]:
-        try:
-            rows = self.conn.execute(
-                f"SELECT code, year, quarter FROM {table_name}"
-            ).fetchall()
-            return {(r[0], r[1], r[2]) for r in rows}
-        except Exception:
-            return set()
+    def _find_missing_quarters(
+        self,
+        table_name: str,
+        candidates: list[tuple[str, int, int]],
+    ) -> tuple[list[tuple[str, int, int]], int]:
+        if not candidates:
+            return [], 0
+
+        self.conn.execute("DROP TABLE IF EXISTS _fin_candidates")
+        self.conn.execute(
+            "CREATE TEMP TABLE _fin_candidates "
+            "(code TEXT, year INTEGER, quarter INTEGER)"
+        )
+        self.conn.executemany(
+            "INSERT INTO _fin_candidates VALUES (?,?,?)", candidates
+        )
+
+        rows = self.conn.execute(f"""
+            SELECT c.code, c.year, c.quarter
+            FROM _fin_candidates c
+            LEFT JOIN {table_name} t
+                ON c.code = t.code AND c.year = t.year AND c.quarter = t.quarter
+            WHERE t.code IS NULL
+        """).fetchall()
+        self.conn.execute("DROP TABLE _fin_candidates")
+
+        return rows, len(candidates) - len(rows)
 
     def _flush_pending_batches(self):
         batch_dfs = getattr(self, "_batch_dfs", None)

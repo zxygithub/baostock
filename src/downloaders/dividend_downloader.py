@@ -27,27 +27,22 @@ class DividendDownloader(BaseDownloader):
         current_year = datetime.now().year
         recent_years = {current_year, current_year - 1}
 
-        existing = self._get_existing_dividend_years()
-
         stock_years = self.get_stock_years(codes, start_year, end_year)
 
-        tasks = []
-        skipped = 0
+        candidates = []
         for code in codes:
             ipo_y, out_y = stock_years.get(code, (start_year, end_year))
             eff_start = max(start_year, ipo_y)
             eff_end = min(end_year, out_y)
             if eff_start > eff_end:
                 continue
-
             for year in range(eff_start, eff_end + 1):
                 for year_type in ["report", "operate"]:
-                    if year in recent_years:
-                        tasks.append((code, year, year_type))
-                    elif (code, year, year_type) not in existing:
-                        tasks.append((code, year, year_type))
-                    else:
-                        skipped += 1
+                    candidates.append((code, year, year_type))
+
+        missing = self._find_missing_dividend(candidates, recent_years)
+        tasks = missing["tasks"]
+        skipped = missing["skipped"]
 
         total_possible = len(tasks) + skipped
 
@@ -107,14 +102,49 @@ class DividendDownloader(BaseDownloader):
             time.sleep(batch_sleep)
         return total_rows
 
-    def _get_existing_dividend_years(self) -> set[tuple[str, int, str]]:
-        try:
-            rows = self.conn.execute(
-                "SELECT code, year, year_type FROM dividend"
-            ).fetchall()
-            return {(r[0], r[1], r[2]) for r in rows}
-        except Exception:
-            return set()
+    def _find_missing_dividend(
+        self,
+        candidates: list[tuple[str, int, str]],
+        recent_years: set[int],
+    ) -> dict:
+        """Find missing (code, year, year_type) combos using SQL, not full-table scan.
+
+        Creates a temp table with candidates, then LEFT JOINs against dividend
+        to find missing entries. Recent years are always included (forced refresh).
+        """
+        if not candidates:
+            return {"tasks": [], "skipped": 0}
+
+        self.conn.execute("DROP TABLE IF EXISTS _div_candidates")
+        self.conn.execute(
+            "CREATE TEMP TABLE _div_candidates "
+            "(code TEXT, year INTEGER, year_type TEXT)"
+        )
+        self.conn.executemany(
+            "INSERT INTO _div_candidates VALUES (?,?,?)", candidates
+        )
+
+        rows = self.conn.execute("""
+            SELECT c.code, c.year, c.year_type
+            FROM _div_candidates c
+            LEFT JOIN dividend d
+                ON c.code = d.code AND c.year = d.year AND c.year_type = d.year_type
+            WHERE d.code IS NULL
+        """).fetchall()
+        self.conn.execute("DROP TABLE _div_candidates")
+
+        tasks = []
+        skipped = 0
+        for code, year, year_type in rows:
+            if year not in recent_years:
+                tasks.append((code, year, year_type))
+            else:
+                skipped += 1
+        # All candidates minus tasks = skipped (existing + recent forced)
+        total_existing = len(candidates) - len(tasks) - len([
+            c for c in candidates if c[1] in recent_years
+        ])
+        return {"tasks": tasks, "skipped": total_existing}
 
     def download_adjust_factor(
         self,
