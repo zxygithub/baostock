@@ -1,5 +1,6 @@
 """Database initialization and management module for BaoStock data project."""
 
+import logging
 import sqlite3
 from datetime import date, datetime
 from pathlib import Path
@@ -792,6 +793,10 @@ class DBManager:
         Since we cannot reliably map old columns to new ones, we recreate
         the table and let the next download repopulate it.
         """
+        logging.warning(
+            "stock_industry schema migration: dropping old data "
+            "(old schema had positional column names, cannot be migrated)"
+        )
         conn.execute("ALTER TABLE stock_industry RENAME TO stock_industry_old")
         self._create_stock_industry(conn)
         conn.execute("DROP TABLE stock_industry_old")
