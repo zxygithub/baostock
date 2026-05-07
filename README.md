@@ -272,10 +272,23 @@ stocks:
 
 ## 🔄 更新日志
 
-- **2026-05-07**：
-  - 移除 `config.yaml` 中的邮箱明文密码字段，敏感凭据仅从 `.env` 读取
-  - `daily_report.py` 邮件配置全面迁移至 `.env`，不再回退到 `config.yaml`
-  - `.env.example` 新增 `EMAIL_SMTP_SERVER` 和 `EMAIL_SMTP_PORT` 字段
+- **2026-05-07**：发布 v2.0，包含多项修复与重构
+  - **bug 修复**：
+    - 修复日报指数 K 线估算错误（周线/月线多乘 3 倍复权因子）
+    - 修复 `download_minute_kline()` 传递不存在 `end_date` 参数导致 `TypeError` 的 bug
+    - 修复 `ReportDownloader` 去重逻辑阻止增量更新的问题
+    - 修复 `_api_call` 未调用 `ensure_login()` 导致会话超时后静默失败的问题
+    - 添加 `stock_industry` 迁移数据丢弃前的 warning 日志
+  - **性能优化**：
+    - 分红和财务下载器的存在性检查从全表扫描改为 SQL 临时表 + LEFT JOIN，避免将 20 万+行加载到内存
+    - 添加 32 个单元测试覆盖 `helpers.py` 全部纯函数
+  - **代码重构**：
+    - 提取 `BaseDownloader.get_stock_years()` 消除 `FinancialDownloader` 和 `DividendDownloader` 的重复 IPO/退市过滤逻辑
+    - 集中 139 个列名映射到 `config.py` 的 `RENAME_*` 常量，消除 8 个下载器中的重复定义
+  - **安全加固**：
+    - 移除 `config.yaml` 中的邮箱明文密码字段，敏感凭据仅从 `.env` 读取
+    - `daily_report.py` 邮件配置全面迁移至 `.env`，不再回退到 `config.yaml`
+    - `.env.example` 新增 `EMAIL_SMTP_SERVER` 和 `EMAIL_SMTP_PORT` 字段
 - **2026-04-24**：
   - 新增黑名单检测脚本 (`check_blacklist.py`)
   - 新增邮件日报功能 (`daily_report.py`)
@@ -313,4 +326,4 @@ A: 可以使用 `./clean_data.sh` 清理不需要的历史数据。
 A: 使用 `./start.sh status` 查看数据库状态，或查看日志文件。
 
 ---
-*最后更新：2026 年 4 月 24 日*
+*最后更新：2026 年 5 月 7 日*
