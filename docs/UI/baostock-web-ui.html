@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BaoStock 数据管理平台</title>
+<style>
+:root {
+  --bg-primary: #0f1923;
+  --bg-secondary: #152232;
+  --bg-card: #1a2d42;
+  --bg-hover: #1e3550;
+  --border: #2a4060;
+  --text-primary: #e8edf2;
+  --text-secondary: #8899aa;
+  --text-muted: #556677;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --accent-light: rgba(59,130,246,0.15);
+  --success: #22c55e;
+  --success-bg: rgba(34,197,94,0.12);
+  --warning: #f59e0b;
+  --warning-bg: rgba(245,158,11,0.12);
+  --danger: #ef4444;
+  --danger-bg: rgba(239,68,68,0.12);
+  --purple: #a855f7;
+  --purple-bg: rgba(168,85,247,0.12);
+  --cyan: #06b6d4;
+  --cyan-bg: rgba(6,182,212,0.12);
+  --sidebar-w: 220px;
+  --header-h: 56px;
+  --radius: 8px;
+  --shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-primary); color: var(--text-primary); font-size: 14px; line-height: 1.6; overflow-x: hidden; }
+::-webkit-scrollbar { width:6px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius:3px; }
+
+/* Sidebar */
+.sidebar { position:fixed; left:0; top:0; bottom:0; width: var(--sidebar-w); background: var(--bg-secondary); border-right: 1px solid var(--border); z-index:100; display:flex; flex-direction:column; }
+.sidebar-logo { padding:18px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; }
+.sidebar-logo .icon { width:32px; height:32px; background: linear-gradient(135deg, var(--accent), var(--purple)); border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; color:#fff; }
+.sidebar-logo .title { font-size:15px; font-weight:700; color: var(--text-primary); }
+.sidebar-logo .ver { font-size:10px; color: var(--text-muted); margin-top:2px; }
+.sidebar-nav { flex:1; padding:12px 0; overflow-y:auto; }
+.nav-section { padding:8px 20px 4px; font-size:10px; text-transform:uppercase; color: var(--text-muted); letter-spacing:1px; font-weight:600; }
+.nav-item { display:flex; align-items:center; gap:10px; padding:9px 20px; cursor:pointer; color: var(--text-secondary); transition: all .15s; border-left: 3px solid transparent; font-size:13px; }
+.nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.nav-item.active { background: var(--accent-light); color: var(--accent); border-left-color: var(--accent); font-weight:600; }
+.nav-item svg { width:18px; height:18px; flex-shrink:0; }
+.nav-badge { margin-left:auto; background: var(--danger); color:#fff; font-size:10px; padding:1px 6px; border-radius:10px; font-weight:600; }
+.sidebar-footer { padding:12px 20px; border-top:1px solid var(--border); font-size:11px; color: var(--text-muted); }
+
+/* Header */
+.header { position:fixed; top:0; left: var(--sidebar-w); right:0; height: var(--header-h); background: var(--bg-secondary); border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; padding:0 24px; z-index:90; }
+.header-title { font-size:16px; font-weight:600; }
+.header-actions { display:flex; align-items:center; gap:12px; }
+.header-btn { padding:6px 14px; border-radius:6px; border:1px solid var(--border); background:transparent; color: var(--text-secondary); cursor:pointer; font-size:12px; display:flex; align-items:center; gap:6px; transition: all .15s; }
+.header-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.header-btn.primary { background: var(--accent); border-color: var(--accent); color:#fff; }
+.header-btn.primary:hover { background: var(--accent-hover); }
+.status-dot { width:8px; height:8px; border-radius:50%; background: var(--success); display:inline-block; }
+.status-dot.warn { background: var(--warning); }
+.status-dot.error { background: var(--danger); }
+
+/* Main */
+.main { margin-left: var(--sidebar-w); margin-top: var(--header-h); padding:24px; min-height: calc(100vh - var(--header-h)); }
+.page { display:none; }
+.page.active { display:block; }
+
+/* Cards */
+.stats-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px; }
+.stat-card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); padding:20px; position:relative; overflow:hidden; }
+.stat-card .label { font-size:12px; color: var(--text-secondary); margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+.stat-card .value { font-size:28px; font-weight:700; font-family: "SF Mono", "Fira Code", monospace; }
+.stat-card .sub { font-size:11px; color: var(--text-muted); margin-top:4px; }
+.stat-card .accent-bar { position:absolute; top:0; left:0; right:0; height:3px; }
+.stat-card.blue .accent-bar { background: var(--accent); }
+.stat-card.green .accent-bar { background: var(--success); }
+.stat-card.orange .accent-bar { background: var(--warning); }
+.stat-card.purple .accent-bar { background: var(--purple); }
+.stat-card.cyan .accent-bar { background: var(--cyan); }
+.stat-card.red .accent-bar { background: var(--danger); }
+
+/* Tables */
+.card { background: var(--bg-card); border:1px solid var(--border); border-radius: var(--radius); margin-bottom:20px; overflow:hidden; }
+.card-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+.card-header h3 { font-size:14px; font-weight:600; }
+.card-body { padding:0; }
+.card-body.padded { padding:20px; }
+table.data-table { width:100%; border-collapse:collapse; font-size:13px; }
+table.data-table th { background: var(--bg-secondary); padding:10px 16px; text-align:left; font-weight:600; color: var(--text-secondary); font-size:11px; text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid var(--border); }
+table.data-table td { padding:10px 16px; border-bottom:1px solid var(--border); color: var(--text-secondary); }
+table.data-table tr:last-child td { border-bottom:none; }
+table.data-table tr:hover td { background: var(--bg-hover); }
+table.data-table .mono { font-family: "SF Mono", "Fira Code", monospace; font-size:12px; }
+
+/* Badges */
+.badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:600; }
+.badge.success { background: var(--success-bg); color: var(--success); }
+.badge.warning { background: var(--warning-bg); color: var(--warning); }
+.badge.danger { background: var(--danger-bg); color: var(--danger); }
+.badge.info { background: var(--accent-light); color: var(--accent); }
+.badge.purple { background: var(--purple-bg); color: var(--purple); }
+
+/* Progress */
+.progress-bar { height:6px; background: var(--bg-primary); border-radius:3px; overflow:hidden; }
+.progress-bar .fill { height:100%; border-radius:3px; transition: width .5s ease; }
+.progress-bar .fill.green { background: var(--success); }
+.progress-bar .fill.blue { background: var(--accent); }
+.progress-bar .fill.orange { background: var(--warning); }
+.progress-bar .fill.red { background: var(--danger); }
+
+/* Buttons */
+.btn { padding:7px 16px; border-radius:6px; border:1px solid var(--border); background:transparent; color: var(--text-secondary); cursor:pointer; font-size:12px; transition: all .15s; display:inline-flex; align-items:center; gap:6px; }
+.btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color:#fff; }
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.success { background: var(--success); border-color: var(--success); color:#fff; }
+.btn.danger { background: var(--danger); border-color: var(--danger); color:#fff; }
+.btn.sm { padding:4px 10px; font-size:11px; }
+.btn-group { display:flex; gap:8px; }
+
+/* Toggle */
+.toggle { position:relative; width:36px; height:20px; cursor:pointer; }
+.toggle input { display:none; }
+.toggle .slider { position:absolute; inset:0; background: var(--border); border-radius:10px; transition: .2s; }
+.toggle .slider::before { content:''; position:absolute; width:14px; height:14px; border-radius:50%; background:#fff; top:3px; left:3px; transition: .2s; }
+.toggle input:checked + .slider { background: var(--accent); }
+.toggle input:checked + .slider::before { transform: translateX(16px); }
+
+/* Form */
+.form-group { margin-bottom:16px; }
+.form-group label { display:block; font-size:12px; color: var(--text-secondary); margin-bottom:6px; font-weight:500; }
+.form-input { width:100%; padding:8px 12px; background: var(--bg-primary); border:1px solid var(--border); border-radius:6px; color: var(--text-primary); font-size:13px; font-family: "SF Mono", "Fira Code", monospace; }
+.form-input:focus { outline:none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+textarea.form-input { min-height:200px; resize:vertical; line-height:1.5; }
+select.form-input { cursor:pointer; }
+
+/* Tabs */
+.tabs { display:flex; gap:0; border-bottom:1px solid var(--border); margin-bottom:20px; }
+.tab { padding:10px 20px; cursor:pointer; color: var(--text-secondary); font-size:13px; border-bottom:2px solid transparent; transition: all .15s; }
+.tab:hover { color: var(--text-primary); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight:600; }
+.tab-content { display:none; }
+.tab-content.active { display:block; }
+
+/* Log */
+.log-viewer { background: #0a0f18; border:1px solid var(--border); border-radius: var(--radius); padding:16px; font-family: "SF Mono", "Fira Code", monospace; font-size:12px; line-height:1.8; max-height:500px; overflow-y:auto; color: var(--text-secondary); }
+.log-viewer .log-line { white-space:pre; }
+.log-viewer .log-line .time { color: var(--text-muted); }
+.log-viewer .log-line .info { color: var(--accent); }
+.log-viewer .log-line .warn { color: var(--warning); }
+.log-viewer .log-line .error { color: var(--danger); }
+.log-viewer .log-line .success { color: var(--success); }
+.log-viewer .log-line .api { color: var(--purple); }
+
+/* Grid layout */
+.grid-2 { display:grid; grid-template-columns: 1fr 1fr; gap:20px; }
+.grid-3 { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:20px; }
+
+/* Chart placeholder */
+.chart-area { height:200px; display:flex; align-items:flex-end; gap:4px; padding:20px; }
+.chart-bar { flex:1; background: var(--accent); border-radius:3px 3px 0 0; min-height:4px; transition: height .5s ease; opacity:.7; }
+.chart-bar:hover { opacity:1; }
+
+/* Modal */
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:200; align-items:center; justify-content:center; }
+.modal-overlay.show { display:flex; }
+.modal { background: var(--bg-card); border:1px solid var(--border); border-radius:12px; width:560px; max-width:90vw; max-height:80vh; overflow-y:auto; box-shadow: var(--shadow); }
+.modal-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+.modal-header h3 { font-size:15px; }
+.modal-close { background:none; border:none; color: var(--text-muted); cursor:pointer; font-size:20px; padding:4px; }
+.modal-body { padding:20px; }
+.modal-footer { padding:12px 20px; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; }
+
+/* Toast */
+.toast-container { position:fixed; top:70px; right:24px; z-index:300; display:flex; flex-direction:column; gap:8px; }
+.toast { padding:12px 20px; border-radius:8px; font-size:13px; font-weight:500; animation: slideIn .3s ease; box-shadow: var(--shadow); }
+.toast.success { background: var(--success-bg); color: var(--success); border:1px solid rgba(34,197,94,.3); }
+.toast.error { background: var(--danger-bg); color: var(--danger); border:1px solid rgba(239,68,68,.3); }
+.toast.info { background: var(--accent-light); color: var(--accent); border:1px solid rgba(59,130,246,.3); }
+@keyframes slideIn { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+
+/* Responsive */
+@media (max-width:1024px) {
+  .grid-2, .grid-3 { grid-template-columns:1fr; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width:768px) {
+  .sidebar { transform:translateX(-100%); }
+  .header { left:0; }
+  .main { margin-left:0; }
+  .stats-grid { grid-template-columns:1fr; }
+}
+
+/* Animations */
+.fade-in { animation: fadeIn .3s ease; }
+@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+/* Scheduler timeline */
+.timeline { padding:20px; }
+.timeline-item { display:flex; gap:16px; padding-bottom:20px; position:relative; }
+.timeline-item:not(:last-child)::after { content:''; position:absolute; left:15px; top:32px; bottom:0; width:2px; background: var(--border); }
+.timeline-dot { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0; }
+.timeline-dot.success { background: var(--success-bg); color: var(--success); border:2px solid var(--success); }
+.timeline-dot.warning { background: var(--warning-bg); color: var(--warning); border:2px solid var(--warning); }
+.timeline-dot.running { background: var(--accent-light); color: var(--accent); border:2px solid var(--accent); animation: pulse 2s infinite; }
+.timeline-dot.error { background: var(--danger-bg); color: var(--danger); border:2px solid var(--danger); }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(59,130,246,.4); } 50% { box-shadow: 0 0 0 8px rgba(59,130,246,0); } }
+.timeline-content { flex:1; }
+.timeline-content h4 { font-size:13px; font-weight:600; margin-bottom:2px; }
+.timeline-content p { font-size:12px; color: var(--text-muted); }
+
+/* Config editor line numbers */
+.config-editor-wrap { position:relative; }
+.line-numbers { position:absolute; left:0; top:0; bottom:0; width:40px; background: var(--bg-secondary); border-right:1px solid var(--border); padding:12px 8px; text-align:right; font-family: "SF Mono", monospace; font-size:12px; color: var(--text-muted); line-height:1.5; user-select:none; }
+.config-editor-wrap textarea { padding-left:52px; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="icon">BS</div>
+    <div>
+      <div class="title">BaoStock 管理平台</div>
+      <div class="ver">v2.1.0</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-section">概览</div>
+    <div class="nav-item active" data-page="dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      仪表盘
+    </div>
+    <div class="nav-section">数据</div>
+    <div class="nav-item" data-page="scheduler">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
+      任务调度
+      <span class="nav-badge">11</span>
+    </div>
+    <div class="nav-item" data-page="data">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+      数据管理
+    </div>
+    <div class="nav-section">系统</div>
+    <div class="nav-item" data-page="config">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      配置中心
+    </div>
+    <div class="nav-item" data-page="logs">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      日志查看
+    </div>
+    <div class="nav-item" data-page="system">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      系统状态
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    BaoStock Data Platform &copy; 2026
+  </div>
+</aside>
+
+<!-- Header -->
+<header class="header">
+  <div class="header-title" id="pageTitle">仪表盘</div>
+  <div class="header-actions">
+    <span style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:6px;">
+      <span class="status-dot"></span> 系统正常
+    </span>
+    <button class="header-btn" onclick="showToast('info','数据刷新中...')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+      刷新
+    </button>
+    <button class="header-btn primary" onclick="runDownload()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      立即下载
+    </button>
+  </div>
+</header>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- Main Content -->
+<main class="main">
+
+  <!-- ==================== DASHBOARD ==================== -->
+  <div class="page active" id="page-dashboard">
+    <div class="stats-grid fade-in">
+      <div class="stat-card blue">
+        <div class="accent-bar"></div>
+        <div class="label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          今日 API 请求
+        </div>
+        <div class="value" style="color:var(--accent);">12,847</div>
+        <div class="sub">上限 49,000 · 已用 26.2%</div>
+        <div style="margin-top:10px;">
+          <div class="progress-bar"><div class="fill blue" style="width:26.2%"></div></div>
+        </div>
+      </div>
+      <div class="stat-card green">
+        <div class="accent-bar"></div>
+        <div class="label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          数据库总行数
+        </div>
+        <div class="value" style="color:var(--success);">4.2M</div>
+        <div class="sub">33 张表 · SQLite WAL 模式</div>
+      </div>
+      <div class="stat-card orange">
+        <div class="accent-bar"></div>
+        <div class="label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>
+          最近一次下载
+        </div>
+        <div class="value" style="color:var(--warning);font-size:20px;">02:35 完成</div>
+        <div class="sub">耗时 2h35m · 拉取 38,421 次请求</div>
+      </div>
+      <div class="stat-card purple">
+        <div class="accent-bar"></div>
+        <div class="label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          黑名单状态
+        </div>
+        <div class="value" style="color:var(--success);font-size:20px;">✅ 正常</div>
+        <div class="sub">IP/账号状态良好</div>
+      </div>
+    </div>
+
+    <div class="grid-2 fade-in">
+      <!-- Recent Runs -->
+      <div class="card">
+        <div class="card-header">
+          <h3>最近运行记录</h3>
+          <button class="btn sm" onclick="navigateTo('scheduler')">查看全部</button>
+        </div>
+        <div class="card-body">
+          <div class="timeline">
+            <div class="timeline-item">
+              <div class="timeline-dot success">✓</div>
+              <div class="timeline-content">
+                <h4>调度任务完成</h4>
+                <p>2026-05-16 02:35 · 11/11 任务成功 · 38,421 请求</p>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-dot success">✓</div>
+              <div class="timeline-content">
+                <h4>调度任务完成</h4>
+                <p>2026-05-15 01:48 · 11/11 任务成功 · 35,102 请求</p>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-dot warning">!</div>
+              <div class="timeline-content">
+                <h4>调度任务部分完成</h4>
+                <p>2026-05-14 03:12 · 9/11 任务成功 · 配额耗尽跳过 2 项</p>
+              </div>
+            </div>
+            <div class="timeline-item">
+              <div class="timeline-dot success">✓</div>
+              <div class="timeline-content">
+                <h4>调度任务完成</h4>
+                <p>2026-05-13 02:15 · 11/11 任务成功 · 41,203 请求</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- API Usage Chart -->
+      <div class="card">
+        <div class="card-header">
+          <h3>近 7 天 API 请求趋势</h3>
+        </div>
+        <div class="card-body">
+          <div class="chart-area" id="apiChart"></div>
+          <div style="display:flex;justify-content:space-between;padding:0 20px 12px;font-size:11px;color:var(--text-muted);">
+            <span>5/10</span><span>5/11</span><span>5/12</span><span>5/13</span><span>5/14</span><span>5/15</span><span>5/16</span>
+          </div>
+          <div style="padding:0 20px 16px;display:flex;gap:16px;font-size:11px;">
+            <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;background:var(--accent);border-radius:2px;display:inline-block;"></span> 请求次数</span>
+            <span style="color:var(--text-muted);">上限 49,000/天</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top Tables -->
+    <div class="card fade-in">
+      <div class="card-header">
+        <h3>数据表 TOP 10（按行数）</h3>
+      </div>
+      <div class="card-body">
+        <table class="data-table">
+          <thead><tr><th>表名</th><th>数据类别</th><th style="text-align:right">行数</th><th style="width:200px">完成度</th><th>状态</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">all_stock_daily</td><td>K 线日线</td><td class="mono" style="text-align:right">1,842,305</td><td><div class="progress-bar"><div class="fill green" style="width:100%"></div></div></td><td><span class="badge success">✅ 完成</span></td></tr>
+            <tr><td class="mono">all_stock_weekly</td><td>K 线周线</td><td class="mono" style="text-align:right">356,892</td><td><div class="progress-bar"><div class="fill green" style="width:100%"></div></div></td><td><span class="badge success">✅ 完成</span></td></tr>
+            <tr><td class="mono">all_stock_monthly</td><td>K 线月线</td><td class="mono" style="text-align:right">89,234</td><td><div class="progress-bar"><div class="fill green" style="width:100%"></div></div></td><td><span class="badge success">✅ 完成</span></td></tr>
+            <tr><td class="mono">profit_data</td><td>财务-盈利</td><td class="mono" style="text-align:right">423,100</td><td><div class="progress-bar"><div class="fill blue" style="width:72%"></div></div></td><td><span class="badge info">🟢 72%</span></td></tr>
+            <tr><td class="mono">dividend</td><td>分红数据</td><td class="mono" style="text-align:right">186,543</td><td><div class="progress-bar"><div class="fill blue" style="width:65%"></div></div></td><td><span class="badge info">🟢 65%</span></td></tr>
+            <tr><td class="mono">operation_data</td><td>财务-营运</td><td class="mono" style="text-align:right">398,200</td><td><div class="progress-bar"><div class="fill orange" style="width:58%"></div></div></td><td><span class="badge warning">🟡 58%</span></td></tr>
+            <tr><td class="mono">growth_data</td><td>财务-成长</td><td class="mono" style="text-align:right">376,800</td><td><div class="progress-bar"><div class="fill orange" style="width:55%"></div></div></td><td><span class="badge warning">🟡 55%</span></td></tr>
+            <tr><td class="mono">forecast_report</td><td>业绩预告</td><td class="mono" style="text-align:right">145,600</td><td><div class="progress-bar"><div class="fill orange" style="width:42%"></div></div></td><td><span class="badge warning">🟡 42%</span></td></tr>
+            <tr><td class="mono">balance_data</td><td>财务-偿债</td><td class="mono" style="text-align:right">312,400</td><td><div class="progress-bar"><div class="fill red" style="width:38%"></div></div></td><td><span class="badge danger">🔴 38%</span></td></tr>
+            <tr><td class="mono">cash_flow_data</td><td>财务-现金流</td><td class="mono" style="text-align:right">289,100</td><td><div class="progress-bar"><div class="fill red" style="width:35%"></div></div></td><td><span class="badge danger">🔴 35%</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCHEDULER ==================== -->
+  <div class="page" id="page-scheduler">
+    <div class="stats-grid fade-in">
+      <div class="stat-card green">
+        <div class="accent-bar"></div>
+        <div class="label">已启用任务</div>
+        <div class="value" style="color:var(--success);">9</div>
+        <div class="sub">共 11 个任务</div>
+      </div>
+      <div class="stat-card blue">
+        <div class="accent-bar"></div>
+        <div class="label">今日配额使用</div>
+        <div class="value" style="color:var(--accent);">26.2%</div>
+        <div class="sub">12,847 / 49,000</div>
+      </div>
+      <div class="stat-card cyan">
+        <div class="accent-bar"></div>
+        <div class="label">下次调度</div>
+        <div class="value" style="color:var(--cyan);font-size:20px;">明日 01:00</div>
+        <div class="sub">工作日 + 交易日</div>
+      </div>
+      <div class="stat-card purple">
+        <div class="accent-bar"></div>
+        <div class="label">运行成功率</div>
+        <div class="value" style="color:var(--purple);">92%</div>
+        <div class="sub">近 30 天统计</div>
+      </div>
+    </div>
+
+    <div class="card fade-in">
+      <div class="card-header">
+        <h3>任务列表</h3>
+        <div class="btn-group">
+          <button class="btn sm" onclick="openModal('addTaskModal')">+ 新增任务</button>
+          <button class="btn sm primary" onclick="runScheduler()">▶ 立即运行</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <table class="data-table">
+          <thead><tr><th style="width:30px">#</th><th>任务名称</th><th>数据类别</th><th>目标表</th><th>调度策略</th><th>配额分配</th><th style="width:60px">启用</th><th style="width:100px">操作</th></tr></thead>
+          <tbody id="taskTableBody">
+            <tr><td class="mono">1</td><td><strong>meta_basic</strong></td><td><span class="badge info">meta</span></td><td class="mono" style="font-size:11px">stock_basic, trade_dates...</td><td>启动时</td><td>50 (0.1%)</td><td><label class="toggle"><input type="checkbox" checked onchange="toggleTask(this,'meta_basic')"><span class="slider"></span></label></td><td><button class="btn sm" onclick="showToast('info','编辑 meta_basic')">编辑</button></td></tr>
+            <tr><td class="mono">2</td><td><strong>index_components</strong></td><td><span class="badge purple">component</span></td><td class="mono" style="font-size:11px">sz50, hs300, zz500</td><td>周一</td><td>100 (0.2%)</td><td><label class="toggle"><input type="checkbox" checked onchange="toggleTask(this,'index_components')"><span class="slider"></span></label></td><td><button class="btn sm" onclick="showToast('info','编辑 index_components')">编辑</button></td></tr>
+            <tr><td class="mono">3</td><td><strong>macro_data</strong></td><td><span class="badge success">macro</span></td><td class="mono" style="font-size:11px">deposit_rate, loan_rate...</td><td>每日 01:00-06:00</td><td>200 (0.4%)</td><td><label class="toggle"><input type="checkbox" checked onchange="toggleTask(this,'macro_data')"><span class="slider"></span></label></td><td><button class="btn sm" onclick="showToast('info','编辑 macro_data')">编辑</button></td></tr>
+            <tr><td class="mono">4</td><td><strong>index_kline</strong></td><td><span class="badge info">index</span></td><td class="mono" style="font-size:11px">index_daily, weekly, monthly</td><td>每日 01:00-06:00</td><td>500 (1.0%)</td><td><label class="toggle"><input type="checkbox" checked onchange="toggleTask(this,'index_kline')"><span class="slider"></span></label></td><td><button class="btn sm" onclick="showToast('info','编辑 index_kline')">编辑</button></td></tr>
+            <tr><td class="mono">5</td><td><strong>kline_daily</strong></td><td><span class="badge warning">kline</span></td><td class="mono" style="font-size:11px">all_stock_daily</td><td>每日 01:00-06:00</td><td>30,000 (60%)</td><td><label class="toggle"><input type="checkbox" checked onchange="toggleTask(this,'kline_daily')"><span class="slider"></span></label></td><td><button class="btn sm" onclick="showToast('info','编辑 kline_daily')">编辑</button></td></tr>
+            <tr><td class="mono">6</td><td><strong>kline_weekly</strong></td><td><span class="badge warning">kline</span></td><td class="mono" style="font-size:11px">all_stock_weekly</td><td>每日</td><td>5,000 (10%)</td><td><label class="toggle"><input type="checkbox" checked onchange="toggleTask(this,'kline_weekly')"><span class="slider"></span></label></td><td><button class="btn sm" onclick="showToast('info','编辑 kline_weekly')">编辑</button></td></tr>
+            <tr><td class="mono">7</td><td><strong>kline_monthly</strong></td><td><span class="badge warning">kline</span></td><td class="mono" style="font-size:11px">all_stock_monthly</td><td>每日</td><td>3,000 (6%)</td><td><label class="toggle"><input type="checkbox" checked onchange="toggleTask(this,'kline_monthly')"><span class="slider"></span></label></td><td><button class="btn sm" onclick="showToast('info','编辑 kline_monthly')">编辑</button></td></tr>
+            <tr><td class="mono">8</td><td><strong>kline_minute</strong></td><td><span class="badge warning">kline</span></td><td class="mono" style="font-size:11px">all_stock_5min, 15min...</td><td>每日</td><td>5,000 (10%)</td><td><label class="toggle"><input type="checkbox" onchange="toggleTask(this,'kline_minute')"><span class="slider"></span></label></td><td><button class="btn sm" onclick="showToast('info','编辑 kline_minute')">编辑</button></td></tr>
+            <tr><td class="mono">9</td><td><strong>financial_data</strong></td><td><span class="badge danger">financial</span></td><td class="mono" style="font-size:11px">profit_data, operation_data...</td><td>每日</td><td>3,000 (6%)</td><td><label class="toggle"><input type="checkbox" checked onchange="toggleTask(this,'financial_data')"><span class="slider"></span></label></td><td><button class="btn sm" onclick="showToast('info','编辑 financial_data')">编辑</button></td></tr>
+            <tr><td class="mono">10</td><td><strong>company_reports</strong></td><td><span class="badge purple">report</span></td><td class="mono" style="font-size:11px">performance_express, forecast</td><td>周一/周四</td><td>2,000 (4%)</td><td><label class="toggle"><input type="checkbox" checked onchange="toggleTask(this,'company_reports')"><span class="slider"></span></label></td><td><button class="btn sm" onclick="showToast('info','编辑 company_reports')">编辑</button></td></tr>
+            <tr><td class="mono">11</td><td><strong>dividend_and_adjust</strong></td><td><span class="badge success">dividend</span></td><td class="mono" style="font-size:11px">dividend, adjust_factor</td><td>周一</td><td>2,000 (4%)</td><td><label class="toggle"><input type="checkbox" checked onchange="toggleTask(this,'dividend_and_adjust')"><span class="slider"></span></label></td><td><button class="btn sm" onclick="showToast('info','编辑 dividend_and_adjust')">编辑</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Quota Distribution -->
+    <div class="card fade-in">
+      <div class="card-header">
+        <h3>今日配额分配可视化</h3>
+      </div>
+      <div class="card-body padded">
+        <div style="display:flex;gap:2px;height:32px;border-radius:6px;overflow:hidden;margin-bottom:16px;">
+          <div style="width:0.1%;background:var(--text-muted);" title="meta_basic"></div>
+          <div style="width:0.2%;background:var(--purple);" title="index_components"></div>
+          <div style="width:0.4%;background:var(--success);" title="macro_data"></div>
+          <div style="width:1.0%;background:var(--accent);" title="index_kline"></div>
+          <div style="width:60%;background:var(--warning);" title="kline_daily"></div>
+          <div style="width:10%;background:var(--orange);" title="kline_weekly"></div>
+          <div style="width:6%;background:var(--cyan);" title="kline_monthly"></div>
+          <div style="width:6%;background:var(--danger);" title="financial_data"></div>
+          <div style="width:4%;background:#e879f9;" title="company_reports"></div>
+          <div style="width:4%;background:#34d399;" title="dividend_and_adjust"></div>
+          <div style="width:8.3%;background:var(--bg-primary);" title="未分配"></div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;font-size:11px;">
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--warning);border-radius:2px;display:inline-block;"></span> kline_daily 60%</span>
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--orange);border-radius:2px;display:inline-block;"></span> kline_weekly 10%</span>
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--cyan);border-radius:2px;display:inline-block;"></span> kline_monthly 6%</span>
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--danger);border-radius:2px;display:inline-block;"></span> financial_data 6%</span>
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:#e879f9;border-radius:2px;display:inline-block;"></span> company_reports 4%</span>
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:#34d399;border-radius:2px;display:inline-block;"></span> dividend 4%</span>
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--accent);border-radius:2px;display:inline-block;"></span> index_kline 1%</span>
+          <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:var(--bg-primary);border:1px solid var(--border);border-radius:2px;display:inline-block;"></span> 未分配 8.3%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== DATA MANAGER ==================== -->
+  <div class="page" id="page-data">
+    <div class="tabs">
+      <div class="tab active" data-tab="tableList">数据表一览</div>
+      <div class="tab" data-tab="dataClean">数据清理</div>
+      <div class="tab" data-tab="dataExport">数据导出</div>
+    </div>
+
+    <div class="tab-content active" id="tab-tableList">
+      <div class="card">
+        <div class="card-header">
+          <h3>全部数据表（33 张）</h3>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" class="form-input" style="width:200px;padding:5px 10px;font-size:12px;" placeholder="搜索表名..." oninput="filterTables(this.value)">
+          </div>
+        </div>
+        <div class="card-body">
+          <table class="data-table" id="allTablesTable">
+            <thead><tr><th>表名</th><th>类别</th><th style="text-align:right">行数</th><th style="text-align:right">大小</th><th>最新数据</th><th>操作</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">trade_dates</td><td><span class="badge info">元数据</span></td><td class="mono" style="text-align:right">8,720</td><td class="mono">128 KB</td><td>2026-05-15</td><td><button class="btn sm" onclick="showToast('info','查看 trade_dates 数据')">查看</button></td></tr>
+              <tr><td class="mono">stock_basic</td><td><span class="badge info">元数据</span></td><td class="mono" style="text-align:right">5,524</td><td class="mono">256 KB</td><td>2026-05-15</td><td><button class="btn sm" onclick="showToast('info','查看 stock_basic 数据')">查看</button></td></tr>
+              <tr><td class="mono">stock_industry</td><td><span class="badge info">元数据</span></td><td class="mono" style="text-align:right">5,480</td><td class="mono">192 KB</td><td>2026-05-15</td><td><button class="btn sm" onclick="showToast('info','查看 stock_industry 数据')">查看</button></td></tr>
+              <tr><td class="mono">all_stock_daily</td><td><span class="badge warning">K 线</span></td><td class="mono" style="text-align:right">1,842,305</td><td class="mono">286 MB</td><td>2026-05-15</td><td><button class="btn sm" onclick="showToast('info','查看 all_stock_daily 数据')">查看</button> <button class="btn sm danger" onclick="confirmClean('all_stock_daily')">清理</button></td></tr>
+              <tr><td class="mono">all_stock_weekly</td><td><span class="badge warning">K 线</span></td><td class="mono" style="text-align:right">356,892</td><td class="mono">54 MB</td><td>2026-05-15</td><td><button class="btn sm" onclick="showToast('info','查看')">查看</button> <button class="btn sm danger" onclick="confirmClean('all_stock_weekly')">清理</button></td></tr>
+              <tr><td class="mono">all_stock_monthly</td><td><span class="badge warning">K 线</span></td><td class="mono" style="text-align:right">89,234</td><td class="mono">14 MB</td><td>2026-05-15</td><td><button class="btn sm" onclick="showToast('info','查看')">查看</button> <button class="btn sm danger" onclick="confirmClean('all_stock_monthly')">清理</button></td></tr>
+              <tr><td class="mono">profit_data</td><td><span class="badge danger">财务</span></td><td class="mono" style="text-align:right">423,100</td><td class="mono">68 MB</td><td>2026-Q1</td><td><button class="btn sm" onclick="showToast('info','查看')">查看</button> <button class="btn sm danger" onclick="confirmClean('profit_data')">清理</button></td></tr>
+              <tr><td class="mono">dividend</td><td><span class="badge success">分红</span></td><td class="mono" style="text-align:right">186,543</td><td class="mono">32 MB</td><td>2026-05-10</td><td><button class="btn sm" onclick="showToast('info','查看')">查看</button> <button class="btn sm danger" onclick="confirmClean('dividend')">清理</button></td></tr>
+              <tr><td class="mono">deposit_rate</td><td><span class="badge success">宏观</span></td><td class="mono" style="text-align:right">42</td><td class="mono">16 KB</td><td>2026-05-15</td><td><button class="btn sm" onclick="showToast('info','查看')">查看</button></td></tr>
+              <tr><td class="mono">request_count</td><td><span class="badge info">系统</span></td><td class="mono" style="text-align:right">180</td><td class="mono">32 KB</td><td>2026-05-16</td><td><button class="btn sm" onclick="showToast('info','查看')">查看</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-dataClean">
+      <div class="card">
+        <div class="card-header"><h3>数据清理操作</h3></div>
+        <div class="card-body padded">
+          <div class="grid-3" style="margin-bottom:20px;">
+            <div class="stat-card red" style="cursor:pointer;" onclick="showToast('error','确认清理所有数据?')">
+              <div class="accent-bar"></div>
+              <div class="label">清理全部数据</div>
+              <div class="value" style="color:var(--danger);font-size:18px;">清空 33 张表</div>
+              <div class="sub">危险操作，需二次确认</div>
+            </div>
+            <div class="stat-card orange" style="cursor:pointer;" onclick="showToast('info','选择要清理的表')">
+              <div class="accent-bar"></div>
+              <div class="label">清理 K 线数据</div>
+              <div class="value" style="color:var(--warning);font-size:18px;">7 张表</div>
+              <div class="sub">日线/周线/月线/分钟线/指数</div>
+            </div>
+            <div class="stat-card purple" style="cursor:pointer;" onclick="showToast('info','选择要清理的财务表')">
+              <div class="accent-bar"></div>
+              <div class="label">清理财务数据</div>
+              <div class="value" style="color:var(--purple);font-size:18px;">6 张表</div>
+              <div class="sub">盈利/营运/成长/偿债/现金流/杜邦</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>清理后自动重新下载</label>
+            <label class="toggle"><input type="checkbox"><span class="slider"></span></label>
+            <span style="font-size:12px;color:var(--text-muted);margin-left:8px;">清理完成后立即启动调度任务</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-dataExport">
+      <div class="card">
+        <div class="card-header"><h3>数据导出</h3></div>
+        <div class="card-body padded">
+          <div class="form-group">
+            <label>选择导出表</label>
+            <select class="form-input">
+              <option>all_stock_daily — 股票日线 K 线</option>
+              <option>all_stock_weekly — 股票周线 K 线</option>
+              <option>all_stock_monthly — 股票月线 K 线</option>
+              <option>profit_data — 季频盈利能力</option>
+              <option>dividend — 分红数据</option>
+              <option>...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>导出格式</label>
+            <select class="form-input">
+              <option>CSV</option>
+              <option>Excel (xlsx)</option>
+              <option>JSON</option>
+              <option>SQL Dump</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>日期范围</label>
+            <div style="display:flex;gap:12px;">
+              <input type="date" class="form-input" value="2026-01-01" style="flex:1;">
+              <input type="date" class="form-input" value="2026-05-15" style="flex:1;">
+            </div>
+          </div>
+          <button class="btn primary" onclick="showToast('success','导出任务已创建，文件将在完成后下载')">导出文件</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== CONFIG ==================== -->
+  <div class="page" id="page-config">
+    <div class="tabs">
+      <div class="tab active" data-tab="configYaml">config.yaml</div>
+      <div class="tab" data-tab="configScheduler">scheduler.yaml</div>
+      <div class="tab" data-tab="configEnv">.env</div>
+    </div>
+
+    <div class="tab-content active" id="tab-configYaml">
+      <div class="card">
+        <div class="card-header">
+          <h3>config.yaml</h3>
+          <div class="btn-group">
+            <button class="btn sm" onclick="showToast('info','配置已恢复')">恢复</button>
+            <button class="btn sm primary" onclick="saveConfig()">保存配置</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="config-editor-wrap">
+            <div class="line-numbers" id="lineNumbers"></div>
+            <textarea class="form-input" id="configEditor" spellcheck="false"># ============================================================================
+# BaoStock Configuration File
+# ============================================================================
+
+api:
+  socket_timeout: 30
+  daily_request_limit: 49000
+
+download:
+  kline:
+    daily:
+      enabled: true
+      start_date: "1990-12-19"
+      adjustflags: [1, 2, 3]
+    weekly:
+      enabled: true
+      adjustflags: [1, 2, 3]
+    monthly:
+      enabled: true
+      adjustflags: [1, 2, 3]
+    minute:
+      enabled: false
+      start_date: "2019-01-02"
+      frequencies: ["5", "15", "30", "60"]
+      adjustflags: [3]
+
+  financial:
+    enabled: true
+    start_year: 2007
+    types:
+      - profit
+      - operation
+      - growth
+      - balance
+      - cashflow
+      - dupont
+
+  reports:
+    enabled: true
+    start_date: "2003-01-01"
+
+  dividend:
+    enabled: true
+    start_year: 2007
+
+  macro:
+    enabled: true
+
+  components:
+    enabled: true
+
+  index_kline:
+    enabled: true
+    start_date: "2006-01-01"
+
+stocks:
+  filter: "type=1 AND status=1"
+  batch_size: 200
+  batch_sleep: 2
+
+email:
+  enabled: true</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-configScheduler">
+      <div class="card">
+        <div class="card-header">
+          <h3>scheduler.yaml</h3>
+          <div class="btn-group">
+            <button class="btn sm" onclick="showToast('info','配置已恢复')">恢复</button>
+            <button class="btn sm primary" onclick="saveConfig()">保存配置</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="config-editor-wrap">
+            <div class="line-numbers" id="lineNumbers2"></div>
+            <textarea class="form-input" id="schedulerEditor" spellcheck="false"># ============================================================================
+# BaoStock Scheduler Configuration
+# ============================================================================
+
+global:
+  daily_request_limit: 49000
+  enabled: true
+  default_retry:
+    max_retries: 3
+    backoff_base: 2
+
+tasks:
+  - name: meta_basic
+    category: meta
+    tables: ["stock_basic", "trade_dates", "stock_industry"]
+    enabled: true
+    priority: 1
+    schedule:
+      type: on_startup
+    quota:
+      max_requests: 50
+      share_of_daily_limit: 0.001
+
+  - name: kline_daily
+    category: kline
+    subcategory: daily
+    tables: ["all_stock_daily"]
+    enabled: true
+    priority: 5
+    schedule:
+      type: daily
+      trading_day_only: true
+      time_window:
+        start: "01:00"
+        end: "06:00"
+    quota:
+      max_requests: 30000
+      share_of_daily_limit: 0.6</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="tab-configEnv">
+      <div class="card">
+        <div class="card-header">
+          <h3>.env</h3>
+          <div class="btn-group">
+            <button class="btn sm primary" onclick="saveConfig()">保存</button>
+          </div>
+        </div>
+        <div class="card-body padded">
+          <div class="form-group">
+            <label>EMAIL_SMTP_SERVER</label>
+            <input type="text" class="form-input" value="smtp.qq.com">
+          </div>
+          <div class="form-group">
+            <label>EMAIL_SMTP_PORT</label>
+            <input type="text" class="form-input" value="465">
+          </div>
+          <div class="form-group">
+            <label>EMAIL_SENDER</label>
+            <input type="text" class="form-input" value="your_email@qq.com">
+          </div>
+          <div class="form-group">
+            <label>EMAIL_PASSWORD</label>
+            <input type="password" class="form-input" value="your_smtp_auth_code">
+          </div>
+          <div class="form-group">
+            <label>EMAIL_RECEIVER</label>
+            <input type="text" class="form-input" value="receiver@qq.com">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== LOGS ==================== -->
+  <div class="page" id="page-logs">
+    <div class="card fade-in">
+      <div class="card-header">
+        <h3>实时日志</h3>
+        <div class="btn-group">
+          <select class="form-input" style="width:140px;padding:4px 8px;font-size:11px;">
+            <option>最新日志</option>
+            <option>2026-05-16 02:35</option>
+            <option>2026-05-15 01:48</option>
+            <option>2026-05-14 03:12</option>
+          </select>
+          <button class="btn sm" onclick="showToast('info','日志已刷新')">刷新</button>
+          <button class="btn sm" onclick="showToast('success','日志已下载')">下载</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="log-viewer" id="logViewer">
+<div class="log-line"><span class="time">[2026-05-16 01:00:01]</span> <span class="info">[INFO]</span> === BaoStock Scheduler ===</div>
+<div class="log-line"><span class="time">[2026-05-16 01:00:01]</span> <span class="info">[INFO]</span> Database initialized. 33 tables ready.</div>
+<div class="log-line"><span class="time">[2026-05-16 01:00:02]</span> <span class="info">[INFO]</span> Loading scheduler.yaml... 11 tasks loaded</div>
+<div class="log-line"><span class="time">[2026-05-16 01:00:02]</span> <span class="info">[INFO]</span> Quota allocation: 49,000 requests distributed</div>
+<div class="log-line"><span class="time">[2026-05-16 01:00:02]</span> <span class="info">[INFO]</span> --- Run #142 started (trigger: scheduled) ---</div>
+<div class="log-line"><span class="time">[2026-05-16 01:00:03]</span> <span class="info">[INFO]</span> <span class="api">[API_REQ]</span> query_trade_dates | rows=8720</div>
+<div class="log-line"><span class="time">[2026-05-16 01:00:04]</span> <span class="info">[INFO]</span> Task [meta_basic] completed · 3 requests · 14,204 rows</div>
+<div class="log-line"><span class="time">[2026-05-16 01:00:05]</span> <span class="info">[INFO]</span> Task [index_components] completed · 3 requests · 850 rows</div>
+<div class="log-line"><span class="time">[2026-05-16 01:00:06]</span> <span class="info">[INFO]</span> Task [macro_data] completed · 5 requests · 124 rows</div>
+<div class="log-line"><span class="time">[2026-05-16 01:00:07]</span> <span class="info">[INFO]</span> Task [index_kline] completed · 24 requests · 18,432 rows</div>
+<div class="log-line"><span class="time">[2026-05-16 01:00:08]</span> <span class="info">[INFO]</span> Task [kline_daily] started · batch_size=200 · 5,524 stocks</div>
+<div class="log-line"><span class="time">[2026-05-16 01:15:22]</span> <span class="info">[INFO]</span> <span class="api">[API_REQ]</span> query_history_k_data_plus | code=sh.600000 frequency=d adjustflag=1 | rows=8720</div>
+<div class="log-line"><span class="time">[2026-05-16 01:15:23]</span> <span class="info">[INFO]</span> <span class="api">[API_REQ]</span> query_history_k_data_plus | code=sh.600000 frequency=d adjustflag=2 | rows=8720</div>
+<div class="log-line"><span class="time">[2026-05-16 01:15:24]</span> <span class="info">[INFO]</span> <span class="api">[API_REQ]</span> query_history_k_data_plus | code=sh.600000 frequency=d adjustflag=3 | rows=8720</div>
+<div class="log-line"><span class="time">[2026-05-16 02:30:15]</span> <span class="warn">[WARN]</span> API usage at 85% (41,650/49,000) — entering conservative mode</div>
+<div class="log-line"><span class="time">[2026-05-16 02:35:42]</span> <span class="info">[INFO]</span> Task [kline_daily] completed · 28,432 requests · 1,245,678 rows</div>
+<div class="log-line"><span class="time">[2026-05-16 02:35:43]</span> <span class="info">[INFO]</span> Task [kline_weekly] completed · 4,890 requests · 234,567 rows</div>
+<div class="log-line"><span class="time">[2026-05-16 02:35:44]</span> <span class="info">[INFO]</span> Task [kline_monthly] completed · 3,210 requests · 89,234 rows</div>
+<div class="log-line"><span class="time">[2026-05-16 02:35:44]</span> <span class="warn">[WARN]</span> Quota nearly exhausted (48,920/49,000). Skipping remaining tasks.</div>
+<div class="log-line"><span class="time">[2026-05-16 02:35:45]</span> <span class="success">[INFO]</span> --- Run #142 completed: 8/11 tasks done, 3 skipped (quota) ---</div>
+<div class="log-line"><span class="time">[2026-05-16 02:35:45]</span> <span class="success">[INFO]</span> Total: 48,920 requests · 2,847,234 rows · 1h35m44s</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SYSTEM ==================== -->
+  <div class="page" id="page-system">
+    <div class="stats-grid fade-in">
+      <div class="stat-card blue">
+        <div class="accent-bar"></div>
+        <div class="label">数据库文件</div>
+        <div class="value" style="color:var(--accent);font-size:22px;">1.2 GB</div>
+        <div class="sub">baostock.db · WAL 模式</div>
+      </div>
+      <div class="stat-card green">
+        <div class="accent-bar"></div>
+        <div class="label">磁盘可用空间</div>
+        <div class="value" style="color:var(--success);font-size:22px;">48.5 GB</div>
+        <div class="sub">总容量 100 GB</div>
+        <div style="margin-top:10px;"><div class="progress-bar"><div class="fill green" style="width:51.5%"></div></div></div>
+      </div>
+      <div class="stat-card orange">
+        <div class="accent-bar"></div>
+        <div class="label">Python 版本</div>
+        <div class="value" style="color:var(--warning);font-size:22px;">3.12.4</div>
+        <div class="sub">uv 管理 · baostock 0.9.1</div>
+      </div>
+      <div class="stat-card purple">
+        <div class="accent-bar"></div>
+        <div class="label">项目版本</div>
+        <div class="value" style="color:var(--purple);font-size:22px;">V2.1.0</div>
+        <div class="sub">Gitee · master 分支</div>
+      </div>
+    </div>
+
+    <div class="grid-2 fade-in">
+      <div class="card">
+        <div class="card-header"><h3>数据库表分布</h3></div>
+        <div class="card-body padded">
+          <table class="data-table">
+            <thead><tr><th>类别</th><th style="text-align:right">表数</th><th style="text-align:right">总行数</th><th style="text-align:right">大小</th></tr></thead>
+            <tbody>
+              <tr><td><span class="badge info">元数据</span></td><td style="text-align:right">4</td><td class="mono" style="text-align:right">19,724</td><td class="mono">576 KB</td></tr>
+              <tr><td><span class="badge warning">K 线数据</span></td><td style="text-align:right">10</td><td class="mono" style="text-align:right">2,288,431</td><td class="mono">354 MB</td></tr>
+              <tr><td><span class="badge danger">财务数据</span></td><td style="text-align:right">6</td><td class="mono" style="text-align:right">1,800,600</td><td class="mono">290 MB</td></tr>
+              <tr><td><span class="badge purple">公司报告</span></td><td style="text-align:right">2</td><td class="mono" style="text-align:right">234,100</td><td class="mono">38 MB</td></tr>
+              <tr><td><span class="badge success">分红数据</span></td><td style="text-align:right">2</td><td class="mono" style="text-align:right">192,000</td><td class="mono">34 MB</td></tr>
+              <tr><td><span class="badge info">指数数据</span></td><td style="text-align:right">6</td><td class="mono" style="text-align:right">45,200</td><td class="mono">8 MB</td></tr>
+              <tr><td><span class="badge success">宏观数据</span></td><td style="text-align:right">5</td><td class="mono" style="text-align:right">450</td><td class="mono">64 KB</td></tr>
+              <tr><td><span class="badge info">系统表</span></td><td style="text-align:right">1</td><td class="mono" style="text-align:right">180</td><td class="mono">32 KB</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>系统信息</h3></div>
+        <div class="card-body padded">
+          <table class="data-table">
+            <tbody>
+              <tr><td style="color:var(--text-muted);width:140px;">项目路径</td><td class="mono">/home/workspace/baostock</td></tr>
+              <tr><td style="color:var(--text-muted);">数据库路径</td><td class="mono">/home/workspace/baostock/data/baostock.db</td></tr>
+              <tr><td style="color:var(--text-muted);">日志路径</td><td class="mono">/home/workspace/baostock/logs/</td></tr>
+              <tr><td style="color:var(--text-muted);">配置文件</td><td class="mono">config.yaml, scheduler.yaml, .env</td></tr>
+              <tr><td style="color:var(--text-muted);">依赖管理</td><td>uv (pyproject.toml)</td></tr>
+              <tr><td style="color:var(--text-muted);">BaoStock SDK</td><td>0.9.1</td></tr>
+              <tr><td style="color:var(--text-muted);">SQLite 版本</td><td>3.45.1</td></tr>
+              <tr><td style="color:var(--text-muted);">代码仓库</td><td><a href="https://gitee.com/superman75/baostock" style="color:var(--accent);text-decoration:none;">gitee.com/superman75/baostock</a></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- Modal: Add Task -->
+<div class="modal-overlay" id="addTaskModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>新增调度任务</h3>
+      <button class="modal-close" onclick="closeModal('addTaskModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>任务名称</label>
+        <input type="text" class="form-input" placeholder="例如: custom_kline">
+      </div>
+      <div class="form-group">
+        <label>数据类别</label>
+        <select class="form-input">
+          <option>meta — 元数据</option>
+          <option>kline — K 线数据</option>
+          <option>financial — 财务数据</option>
+          <option>macro — 宏观数据</option>
+          <option>report — 公司报告</option>
+          <option>dividend — 分红数据</option>
+          <option>component — 指数成分股</option>
+          <option>index — 指数 K 线</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>目标表（JSON 数组）</label>
+        <input type="text" class="form-input" placeholder='["all_stock_daily"]'>
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>调度类型</label>
+          <select class="form-input">
+            <option>on_startup — 启动时</option>
+            <option>daily — 每日</option>
+            <option>weekly — 每周</option>
+            <option>monthly — 每月</option>
+            <option>manual — 手动</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>优先级（数字越小越先）</label>
+          <input type="number" class="form-input" value="10">
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>最大请求数</label>
+          <input type="number" class="form-input" value="5000">
+        </div>
+        <div class="form-group">
+          <label>占每日配额比例</label>
+          <input type="number" class="form-input" value="0.1" step="0.01" min="0" max="1">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('addTaskModal')">取消</button>
+      <button class="btn primary" onclick="closeModal('addTaskModal'); showToast('success','任务已创建')">创建任务</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Confirm Clean -->
+<div class="modal-overlay" id="cleanModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>确认清理</h3>
+      <button class="modal-close" onclick="closeModal('cleanModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--danger);font-weight:600;margin-bottom:12px;">⚠️ 此操作不可撤销！</p>
+      <p style="color:var(--text-secondary);">即将清理表 <code id="cleanTableName" style="color:var(--accent);"></code> 的全部数据。</p>
+      <p style="color:var(--text-muted);font-size:12px;margin-top:8px;">清理后可通过调度任务重新下载。</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('cleanModal')">取消</button>
+      <button class="btn danger" onclick="closeModal('cleanModal'); showToast('success','数据已清理')">确认清理</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Navigation
+const navItems = document.querySelectorAll('.nav-item');
+const pages = document.querySelectorAll('.page');
+const pageTitle = document.getElementById('pageTitle');
+const pageNames = {
+  dashboard: '仪表盘', scheduler: '任务调度', data: '数据管理',
+  config: '配置中心', logs: '日志查看', system: '系统状态'
+};
+
+function navigateTo(pageId) {
+  navItems.forEach(n => n.classList.remove('active'));
+  pages.forEach(p => p.classList.remove('active'));
+  document.querySelector(`[data-page="${pageId}"]`).classList.add('active');
+  document.getElementById(`page-${pageId}`).classList.add('active');
+  pageTitle.textContent = pageNames[pageId] || pageId;
+}
+
+navItems.forEach(item => {
+  item.addEventListener('click', () => navigateTo(item.dataset.page));
+});
+
+// Tabs
+document.querySelectorAll('.tabs').forEach(tabGroup => {
+  tabGroup.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabGroup.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const parent = tab.closest('.page');
+      parent.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      parent.querySelector(`#tab-${tab.dataset.tab}`).classList.add('active');
+    });
+  });
+});
+
+// Toast
+function showToast(type, message) {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+// Modal
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); });
+});
+
+// Actions
+function runDownload() { showToast('info', '正在启动下载任务...'); setTimeout(() => showToast('success', '下载任务已开始'), 1500); }
+function runScheduler() { showToast('info', '调度器启动中...'); setTimeout(() => showToast('success', '调度任务已启动'), 1500); }
+function toggleTask(el, name) { showToast(el.checked ? 'success' : 'warning', `任务 ${name} 已${el.checked ? '启用' : '禁用'}`); }
+function saveConfig() { showToast('success', '配置已保存'); }
+function confirmClean(table) { document.getElementById('cleanTableName').textContent = table; openModal('cleanModal'); }
+function filterTables(query) {
+  const rows = document.querySelectorAll('#allTablesTable tbody tr');
+  rows.forEach(r => { r.style.display = r.textContent.toLowerCase().includes(query.toLowerCase()) ? '' : 'none'; });
+}
+
+// API Chart
+const chartData = [32100, 41200, 35100, 41203, 48920, 35102, 12847];
+const chartArea = document.getElementById('apiChart');
+const maxVal = Math.max(...chartData);
+chartData.forEach((v, i) => {
+  const bar = document.createElement('div');
+  bar.className = 'chart-bar';
+  bar.style.height = `${(v / maxVal) * 160}px`;
+  bar.title = `${v.toLocaleString()} 次请求`;
+  if (v >= 49000) bar.style.background = 'var(--danger)';
+  else if (v >= 40000) bar.style.background = 'var(--warning)';
+  chartArea.appendChild(bar);
+});
+
+// Line numbers for config editor
+function updateLineNumbers(textareaId, lineNumId) {
+  const ta = document.getElementById(textareaId);
+  const ln = document.getElementById(lineNumId);
+  if (!ta || !ln) return;
+  const lines = ta.value.split('\n').length;
+  ln.innerHTML = Array.from({length: lines}, (_, i) => i + 1).join('<br>');
+}
+updateLineNumbers('configEditor', 'lineNumbers');
+updateLineNumbers('schedulerEditor', 'lineNumbers2');
+document.getElementById('configEditor').addEventListener('input', function() { updateLineNumbers('configEditor', 'lineNumbers'); });
+document.getElementById('schedulerEditor').addEventListener('input', function() { updateLineNumbers('schedulerEditor', 'lineNumbers2'); });
+</script>
+</body>
+</html>
