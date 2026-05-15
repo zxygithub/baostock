@@ -376,3 +376,7 @@ end_date = args.end_date or (datetime.now() - timedelta(days=1)).strftime("%Y-%m
 3. **尽快修复**: `is_trading_day()` 类型错误 — 虽然目前未被调用但随时可能引入 bug
 4. **本次迭代修复**: 分钟线 adjustflag 循环、每日更新股票过滤
 5. **下次迭代**: 内存泄漏、配置缓存
+
+---
+
+*文档最后更新：2026年5月16日（维护检查，内容未变更）*

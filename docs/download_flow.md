@@ -653,3 +653,7 @@ for code, year, quarter in all_combinations:
 | `FINANCIAL_SLEEP` | 0.5 | src/config.py | 财务数据每次调用间隔 |
 | `LOGIN_REFRESH_INTERVAL` | 1800 | src/config.py | 会话刷新间隔（30分钟） |
 | `MAX_RETRIES` | 3 | src/config.py | 查询失败重试次数 |
+
+---
+
+*文档最后更新：2026年5月16日*

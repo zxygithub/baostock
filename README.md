@@ -30,6 +30,9 @@ uv sync
 # 每日增量更新
 ./start.sh update
 
+# 基于调度器下载（V2.1.0 规划中）
+./start.sh scheduled
+
 # 检查下载进度
 ./start.sh status
 
@@ -53,8 +56,14 @@ uv sync
 
 - **[执行流程](docs/执行流程.md)** - 详细的项目架构和执行流程说明
 - **[数据下载方案](docs/data_download_plan.md)** - 数据库设计和下载策略
+- **[数据拉取流程](docs/download_flow.md)** - 全量/增量下载详细流程图
+- **[调度方案详细设计](docs/调度方案详细设计.md)** - 任务调度器架构与配置设计
 - **[改进计划](docs/improvement_plan.md)** - 已知问题和改进建议
 - **[优化方案](docs/optimization_plan.md)** - K 线优先、财务降级优化计划
+- **[IPO 日期优化](docs/ipo_based_download_optimization.md)** - 基于 IPO 日期的下载优化
+- **[数据分析](docs/数据分析.md)** - 各表 API 拉取前置条件分析
+- **[代码审查](docs/code_review_2026-04-28.md)** - 全代码逻辑审查报告
+- **[API 请求日志分析](docs/api_request_log_analysis.md)** - 日志统计与异常排查指南
 - **[BaoStock API](docs/pythonAPI.md)** - BaoStock官方API文档
 
 ## 🗂️ 项目结构
@@ -65,6 +74,7 @@ baostock/
 ├── pyproject.toml          # Python项目配置
 ├── start.sh                # 主要入口脚本
 ├── clean_data.sh           # 数据管理脚本
+├── clean_memory.sh         # 内存清理脚本
 ├── data/                   # 数据库文件（git忽略）
 │   └── baostock.db
 ├── logs/                   # 日志文件（git忽略）
@@ -72,7 +82,11 @@ baostock/
 ├── scripts/                # 入口脚本
 │   ├── download_all.py     # 全量下载
 │   ├── update_daily.py     # 增量更新
-│   └── init_db.py          # 数据库初始化
+│   ├── init_db.py          # 数据库初始化
+│   ├── daily_report.py     # 邮件日报
+│   ├── check_blacklist.py  # 黑名单检测
+│   ├── analyze_latest_dates.py  # 最新日期分析
+│   └── estimate_data_volume.py  # 数据量估算
 ├── src/                    # 核心代码
 │   ├── config.py           # 技术常量和字段定义
 │   ├── config_loader.py    # 配置加载器
@@ -105,7 +119,7 @@ baostock/
 # API 配置
 api:
   socket_timeout: 30          # 网络超时（秒）
-  daily_request_limit: 95000  # 每日 API 请求上限
+  daily_request_limit: 49000  # 每日 API 请求上限
 
 # 下载任务开关与日期范围
 download:
@@ -116,15 +130,19 @@ download:
       adjustflags: [1, 2, 3]           # 复权方式：1=后复权，2=前复权，3=不复权
     weekly:
       enabled: true
+      adjustflags: [1, 2, 3]
     monthly:
       enabled: true
+      adjustflags: [1, 2, 3]
     minute:
       enabled: false                   # 分钟数据量较大，默认关闭
       start_date: "2019-01-02"         # 分钟线起始日期（仅支持近5年）
       frequencies: ["5", "15", "30", "60"]
+      adjustflags: [3]                 # 分钟线仅不复权
   financial:
     enabled: true
     start_year: 2007                   # 财务数据起始年份
+    types: [profit, operation, growth, balance, cashflow, dupont]
   reports:
     enabled: true
     start_date: "2003-01-01"
@@ -132,6 +150,8 @@ download:
     enabled: true
     start_year: 2007
   macro:
+    enabled: true
+  components:
     enabled: true
   index_kline:
     enabled: true
@@ -272,6 +292,12 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-05-16**：发布 V2.1.0
+  - **新增调度方案设计**：完成数据拉取任务调度器详细设计文档（MD + HTML）
+    - 基于数据库表/数据种类的任务配置
+    - 支持时间窗口、API 配额分配、优先级排序
+    - 新增 4 张调度表设计（scheduler_tasks / scheduler_runs / scheduler_task_runs / quota_allocation）
+    - 新增 `start.sh scheduled` 命令规划
 - **2026-05-07**：发布 v2.0，包含多项修复与重构
   - **bug 修复**：
     - 修复日报指数 K 线估算错误（周线/月线多乘 3 倍复权因子）
@@ -326,4 +352,4 @@ A: 可以使用 `./clean_data.sh` 清理不需要的历史数据。
 A: 使用 `./start.sh status` 查看数据库状态，或查看日志文件。
 
 ---
-*最后更新：2026 年 5 月 7 日*
+*最后更新：2026 年 5 月 16 日*

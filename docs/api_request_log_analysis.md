@@ -245,4 +245,4 @@ grep '\[API_REQ\]' "$LOG_FILE" | awk -F'|' '{print $2}' | sort | uniq -c | sort 
 
 ---
 
-*文档最后更新：2026年4月30日*
+*文档最后更新：2026年5月16日*

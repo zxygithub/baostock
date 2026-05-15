@@ -573,8 +573,7 @@ Phase 2: 宏观经济数据 (一次性)
   ├── loan_rate
   ├── reserve_ratio
   ├── money_supply_month
-  ├── money_supply_year
-  └── shibor
+  └── money_supply_year
 
 Phase 3: K 线数据 (按批次, 每批后短暂休眠)
   ├── index_daily       (所有指数, 日/周/月)
@@ -626,15 +625,29 @@ Phase 6: 分红与复权 (按股票)
 ## 5. 项目文件结构
 
 ```
-baostock-project/
-├── pyproject.toml
+baostock/
 ├── config.yaml                    # 用户配置文件
-├── baostock.db                    # SQLite 数据库文件
+├── pyproject.toml                 # Python项目配置
+├── start.sh                       # 主要入口脚本
+├── clean_data.sh                  # 数据管理脚本
+├── clean_memory.sh                # 内存清理脚本
+├── data/
+│   └── baostock.db                # SQLite 数据库文件
+├── logs/                          # 日志文件
+├── docs/                          # 项目文档
+├── scripts/
+│   ├── init_db.py                 # 初始化数据库 (建表)
+│   ├── download_all.py            # 全量下载入口
+│   ├── update_daily.py            # 每日增量更新
+│   ├── daily_report.py            # 邮件日报
+│   ├── check_blacklist.py         # 黑名单检测
+│   ├── analyze_latest_dates.py    # 最新日期分析
+│   └── estimate_data_volume.py    # 数据量估算
 ├── src/
 │   ├── __init__.py
-│   ├── db_manager.py              # 数据库初始化、连接管理
 │   ├── config.py                  # 技术常量 (字段定义、路径、指数代码)
 │   ├── config_loader.py           # 配置加载器 (从 config.yaml 读取)
+│   ├── db_manager.py              # 数据库初始化、连接管理
 │   ├── downloaders/
 │   │   ├── __init__.py
 │   │   ├── base.py                # 下载器基类 (登录/登出/重试/休眠)
@@ -648,29 +661,30 @@ baostock-project/
 │   │   └── component_downloader.py # 指数成分股下载
 │   └── utils/
 │       ├── __init__.py
-│       └── helpers.py             # 工具函数 (类型转换、日期处理)
-├── scripts/
-│   ├── init_db.py                 # 初始化数据库 (建表)
-│   ├── download_all.py            # 全量下载入口
-│   └── update_daily.py            # 每日增量更新
+│       ├── helpers.py             # 工具函数 (类型转换、日期处理)
+│       └── validator.py           # 数据验证
 └── tests/
-    └── test_downloaders.py
+    ├── test_helpers.py            # helpers.py 单元测试
+    ├── smoke_test.py              # 冒烟测试
+    └── integration_test.py        # 集成测试
 ```
 
 ### 配置系统说明
 
-项目采用**双配置文件**设计：
+项目采用**三层次配置**设计：
 
 | 文件 | 职责 | 修改频率 | 使用者 |
 |------|------|----------|--------|
 | `config.yaml` | 用户配置（开关、日期、批处理参数） | 经常调整 | 用户 |
+| `.env` | 敏感凭据（邮箱 SMTP 等） | 初始设置 | 用户 |
 | `src/config.py` | 技术常量（字段定义、路径、指数代码） | 几乎不改 | 开发者 |
 | `src/config_loader.py` | 配置加载器 | 几乎不改 | 代码 |
 
 **配置加载流程**：
 1. 所有下载器通过 `config_loader.py` 统一从 `config.yaml` 读取用户配置
-2. 技术常量（如字段定义）直接从 `config.py` 导入
-3. 用户只需编辑 `config.yaml` 即可控制所有下载行为
+2. 敏感凭据从 `.env` 文件读取
+3. 技术常量（如字段定义）直接从 `config.py` 导入
+4. 用户只需编辑 `config.yaml` 即可控制所有下载行为
 
 ---
 
