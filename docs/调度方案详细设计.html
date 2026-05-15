@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BaoStock 数据拉取任务调度器 — 详细设计</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #1c2333;
+            --border: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --accent: #58a6ff;
+            --accent-green: #3fb950;
+            --accent-orange: #d29922;
+            --accent-red: #f85149;
+            --accent-purple: #bc8cff;
+            --code-bg: #1a1f2b;
+            --table-header: #1c2333;
+            --table-row-alt: #161b22;
+            --link: #58a6ff;
+            --blockquote-border: #3b434b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text-primary);
+            line-height: 1.7;
+            font-size: 15px;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 40px 24px 80px;
+        }
+
+        /* Header */
+        .doc-header {
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 24px;
+            margin-bottom: 40px;
+        }
+
+        .doc-header h1 {
+            font-size: 2em;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+        }
+
+        .doc-meta {
+            display: flex;
+            gap: 24px;
+            color: var(--text-secondary);
+            font-size: 0.9em;
+        }
+
+        .doc-meta span {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .doc-meta .badge {
+            background: var(--accent-green);
+            color: #000;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        /* TOC */
+        .toc {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px 28px;
+            margin-bottom: 40px;
+        }
+
+        .toc h2 {
+            font-size: 1.1em;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .toc ol {
+            list-style: none;
+            counter-reset: toc;
+        }
+
+        .toc > ol > li {
+            counter-increment: toc;
+            margin-bottom: 6px;
+        }
+
+        .toc > ol > li > a {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .toc > ol > li > a:hover {
+            text-decoration: underline;
+        }
+
+        .toc > ol > li > a::before {
+            content: counter(toc) ". ";
+            color: var(--text-muted);
+        }
+
+        .toc ol ol {
+            padding-left: 24px;
+            margin-top: 4px;
+        }
+
+        .toc ol ol li {
+            margin-bottom: 4px;
+        }
+
+        .toc ol ol li a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.92em;
+        }
+
+        .toc ol ol li a:hover {
+            color: var(--accent);
+        }
+
+        /* Sections */
+        section {
+            margin-bottom: 48px;
+        }
+
+        h2 {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 20px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h3 {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin: 28px 0 14px;
+        }
+
+        h4 {
+            font-size: 1.05em;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin: 20px 0 10px;
+        }
+
+        p {
+            margin-bottom: 14px;
+            color: var(--text-primary);
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0 24px;
+            font-size: 0.92em;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        thead {
+            background: var(--table-header);
+        }
+
+        th {
+            padding: 10px 14px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-primary);
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 9px 14px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tbody tr:nth-child(even) {
+            background: var(--table-row-alt);
+        }
+
+        code {
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+            font-size: 0.88em;
+            color: var(--accent-orange);
+        }
+
+        pre {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 18px 20px;
+            overflow-x: auto;
+            margin: 16px 0 24px;
+            line-height: 1.5;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+            color: var(--text-primary);
+            font-size: 0.88em;
+        }
+
+        /* Blockquote */
+        blockquote {
+            border-left: 3px solid var(--blockquote-border);
+            padding: 8px 16px;
+            margin: 16px 0;
+            color: var(--text-secondary);
+            background: var(--bg-secondary);
+            border-radius: 0 6px 6px 0;
+        }
+
+        /* Lists */
+        ul, ol {
+            margin: 12px 0 16px 24px;
+            color: var(--text-secondary);
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        li strong {
+            color: var(--text-primary);
+        }
+
+        /* Architecture diagrams */
+        .diagram {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 16px 0 24px;
+            font-family: "SF Mono", "Fira Code", Consolas, monospace;
+            font-size: 0.85em;
+            line-height: 1.6;
+            color: var(--accent-green);
+            overflow-x: auto;
+            white-space: pre;
+        }
+
+        /* Divider */
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 40px 0;
+        }
+
+        /* Footer */
+        .doc-footer {
+            border-top: 1px solid var(--border);
+            padding-top: 20px;
+            margin-top: 60px;
+            color: var(--text-muted);
+            font-size: 0.88em;
+            text-align: center;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px 16px 60px;
+            }
+
+            .doc-header h1 {
+                font-size: 1.5em;
+            }
+
+            .doc-meta {
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            table {
+                font-size: 0.82em;
+            }
+
+            th, td {
+                padding: 6px 8px;
+            }
+
+            .diagram {
+                font-size: 0.75em;
+                padding: 12px;
+            }
+        }
+
+        /* Print */
+        @media print {
+            body {
+                background: #fff;
+                color: #1a1a1a;
+            }
+
+            .container {
+                max-width: 100%;
+                padding: 20px;
+            }
+
+            .toc {
+                background: #f5f5f5;
+                border-color: #ddd;
+            }
+
+            table {
+                border-color: #ddd;
+            }
+
+            th {
+                background: #f0f0f0;
+                color: #1a1a1a;
+                border-color: #ddd;
+            }
+
+            td {
+                color: #333;
+                border-color: #ddd;
+            }
+
+            code {
+                background: #f0f0f0;
+                color: #c41e3a;
+            }
+
+            pre {
+                background: #f5f5f5;
+                border-color: #ddd;
+            }
+
+            pre code {
+                color: #1a1a1a;
+            }
+
+            .diagram {
+                background: #f5f5f5;
+                border-color: #ddd;
+                color: #1a1a1a;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="doc-header">
+            <h1>BaoStock 数据拉取任务调度器 — 详细设计</h1>
+            <div class="doc-meta">
+                <span>版本：v1.0</span>
+                <span>日期：2026-05-16</span>
+                <span>状态：<span class="badge">设计稿</span></span>
+            </div>
+        </div>
+
+        <!-- TOC -->
+        <nav class="toc">
+            <h2>目录</h2>
+            <ol>
+                <li><a href="#goals">设计目标</a>
+                    <ol>
+                        <li><a href="#goals-core">核心诉求</a></li>
+                        <li><a href="#goals-principles">设计原则</a></li>
+                    </ol>
+                </li>
+                <li><a href="#current">现状分析</a>
+                    <ol>
+                        <li><a href="#current-flow">当前下载流程</a></li>
+                        <li><a href="#current-issues">存在的问题</a></li>
+                        <li><a href="#current-reusable">现有可复用组件</a></li>
+                    </ol>
+                </li>
+                <li><a href="#architecture">总体架构</a>
+                    <ol>
+                        <li><a href="#architecture-diagram">架构图</a></li>
+                        <li><a href="#architecture-modules">模块职责</a></li>
+                        <li><a href="#architecture-relation">与现有模块的关系</a></li>
+                    </ol>
+                </li>
+                <li><a href="#database">数据库设计</a>
+                    <ol>
+                        <li><a href="#db-tables">新增表清单</a></li>
+                        <li><a href="#db-schema">表结构</a></li>
+                        <li><a href="#db-relation">与现有表的关系</a></li>
+                    </ol>
+                </li>
+                <li><a href="#config-model">调度配置模型</a>
+                    <ol>
+                        <li><a href="#config-yaml">scheduler.yaml 文件格式</a></li>
+                        <li><a href="#config-fields">配置字段说明</a></li>
+                    </ol>
+                </li>
+                <li><a href="#core-modules">核心模块设计</a>
+                    <ol>
+                        <li><a href="#mod-config">SchedulerConfig</a></li>
+                        <li><a href="#mod-quota">QuotaManager</a></li>
+                        <li><a href="#mod-executor">TaskExecutor</a></li>
+                        <li><a href="#mod-orchestrator">SchedulerOrchestrator</a></li>
+                        <li><a href="#mod-structure">模块目录结构</a></li>
+                    </ol>
+                </li>
+                <li><a href="#flow">执行流程</a>
+                    <ol>
+                        <li><a href="#flow-startup">程序启动流程</a></li>
+                        <li><a href="#flow-task">任务执行详细流程</a></li>
+                        <li><a href="#flow-recovery">中断恢复流程</a></li>
+                    </ol>
+                </li>
+                <li><a href="#quota">API 请求配额管理</a>
+                    <ol>
+                        <li><a href="#quota-levels">配额层级</a></li>
+                        <li><a href="#quota-check">配额检查时机</a></li>
+                        <li><a href="#quota-degrade">降级策略</a></li>
+                    </ol>
+                </li>
+                <li><a href="#error">异常处理与恢复</a></li>
+                <li><a href="#integration">与现有系统集成</a></li>
+                <li><a href="#migration">配置迁移方案</a></li>
+                <li><a href="#examples">使用示例</a></li>
+                <li><a href="#extensions">扩展方向</a></li>
+                <li><a href="#appendix-a">附录 A：Category → Downloader 映射表</a></li>
+                <li><a href="#appendix-b">附录 B：调度状态查询 SQL 汇总</a></li>
+                <li><a href="#appendix-c">附录 C：文件清单</a></li>
+            </ol>
+        </nav>
+
+        <!-- Section 1 -->
+        <section id="goals">
+            <h2>1. 设计目标</h2>
+
+            <h3 id="goals-core">1.1 核心诉求</h3>
+            <table>
+                <thead><tr><th>目标</th><th>说明</th></tr></thead>
+                <tbody>
+                    <tr><td><strong>可配置</strong></td><td>基于数据库表 / 数据种类进行任务配置，无需修改代码</td></tr>
+                    <tr><td><strong>可量化</strong></td><td>支持时间范围、拉取数据量、请求次数等维度的精确控制</td></tr>
+                    <tr><td><strong>可复用</strong></td><td>程序每次启动时自动读取调度配置，按配置执行拉取</td></tr>
+                    <tr><td><strong>可观测</strong></td><td>每次调度运行有完整的执行记录和统计</td></tr>
+                    <tr><td><strong>可恢复</strong></td><td>中断后可从断点恢复，不重复拉取已完成任务</td></tr>
+                </tbody>
+            </table>
+
+            <h3 id="goals-principles">1.2 设计原则</h3>
+            <ul>
+                <li><strong>向后兼容</strong>：现有 <code>config.yaml</code> 和下载脚本无需修改即可继续工作</li>
+                <li><strong>渐进式接入</strong>：调度器作为可选层，不强制替代现有下载流程</li>
+                <li><strong>最小侵入</strong>：复用现有 Downloader 体系，不重写下载逻辑</li>
+                <li><strong>单一职责</strong>：调度器只负责任务编排，不关心具体下载实现</li>
+            </ul>
+        </section>
+
+        <!-- Section 2 -->
+        <section id="current">
+            <h2>2. 现状分析</h2>
+
+            <h3 id="current-flow">2.1 当前下载流程</h3>
+            <div class="diagram">start.sh full/update
+    ↓
+scripts/download_all.py / update_daily.py
+    ↓
+按固定顺序调用各 Downloader
+    ↓
+每个 Downloader 独立管理自己的下载逻辑</div>
+
+            <h3 id="current-issues">2.2 存在的问题</h3>
+            <table>
+                <thead><tr><th>问题</th><th>影响</th></tr></thead>
+                <tbody>
+                    <tr><td>下载顺序硬编码</td><td>调整顺序需修改 Python 代码</td></tr>
+                    <tr><td>请求配额全局共享</td><td>无法为不同数据种类分配不同配额</td></tr>
+                    <tr><td>无任务级状态追踪</td><td>不知道哪些表已拉完、哪些失败</td></tr>
+                    <tr><td>全量/增量两套脚本</td><td>维护成本高，逻辑有重复</td></tr>
+                    <tr><td>配置分散</td><td><code>config.yaml</code> 控制开关和日期，代码中控制顺序和参数</td></tr>
+                </tbody>
+            </table>
+
+            <h3 id="current-reusable">2.3 现有可复用组件</h3>
+            <table>
+                <thead><tr><th>组件</th><th>可复用点</th></tr></thead>
+                <tbody>
+                    <tr><td><code>BaseDownloader</code></td><td>登录、重试、checkpoint、请求计数</td></tr>
+                    <tr><td><code>config_loader.py</code></td><td>YAML 配置加载机制</td></tr>
+                    <tr><td><code>db_manager.py</code></td><td>SQLite 连接管理、表结构定义</td></tr>
+                    <tr><td>各具体 Downloader</td><td>实际下载逻辑（无需修改）</td></tr>
+                    <tr><td><code>request_count</code> 表</td><td>已有的 API 请求计数基础</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Section 3 -->
+        <section id="architecture">
+            <h2>3. 总体架构</h2>
+
+            <h3 id="architecture-diagram">3.1 架构图</h3>
+            <div class="diagram">┌─────────────────────────────────────────────────────────┐
+│                    程序启动 (start.sh)                    │
+└────────────────────────┬────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│              SchedulerOrchestrator (调度编排器)            │
+│                                                         │
+│  1. 加载 scheduler.yaml → SchedulerConfig                │
+│  2. 初始化 scheduler_tasks / scheduler_runs 表           │
+│  3. 计算当日可执行任务列表                                 │
+│  4. 按 priority 排序，依次执行                            │
+│  5. 更新任务状态，写入运行记录                             │
+└────────┬──────────────────────────────┬─────────────────┘
+         │                              │
+         ▼                              ▼
+┌──────────────────┐        ┌──────────────────────────┐
+│  TaskExecutor    │        │  QuotaManager (配额管理)   │
+│  (任务执行器)     │        │                          │
+│                  │        │  - 每日总配额检查           │
+│  - 解析 task_def │        │  - 按任务分配配额           │
+│  - 实例化对应    │        │  - 实时消耗追踪             │
+│    Downloader    │        │  - 配额不足时跳过/降级      │
+│  - 执行下载      │        └──────────────────────────┘
+│  - 回写状态      │
+└──────────────────┘</div>
+
+            <h3 id="architecture-modules">3.2 模块职责</h3>
+            <table>
+                <thead><tr><th>模块</th><th>文件</th><th>职责</th></tr></thead>
+                <tbody>
+                    <tr><td><code>SchedulerConfig</code></td><td><code>src/scheduler/config.py</code></td><td>加载并解析 <code>scheduler.yaml</code></td></tr>
+                    <tr><td><code>SchedulerOrchestrator</code></td><td><code>src/scheduler/orchestrator.py</code></td><td>任务编排：加载配置 → 筛选任务 → 排序 → 执行</td></tr>
+                    <tr><td><code>TaskExecutor</code></td><td><code>src/scheduler/executor.py</code></td><td>将任务定义映射到具体 Downloader 并执行</td></tr>
+                    <tr><td><code>QuotaManager</code></td><td><code>src/scheduler/quota.py</code></td><td>API 请求配额的分配、检查、消耗追踪</td></tr>
+                    <tr><td><code>scheduler.yaml</code></td><td>项目根目录</td><td>用户可编辑的调度配置文件</td></tr>
+                </tbody>
+            </table>
+
+            <h3 id="architecture-relation">3.3 与现有模块的关系</h3>
+            <div class="diagram">现有模块（保持不变）          新增调度模块
+┌──────────────┐           ┌─────────────────────┐
+│ config.yaml  │           │ scheduler.yaml       │
+│ (数据开关)    │           │ (任务调度配置)        │
+└──────┬───────┘           └──────────┬──────────┘
+       │                              │
+       ▼                              ▼
+┌──────────────┐           ┌─────────────────────┐
+│config_loader │           │ SchedulerConfig      │
+│.py           │           │                      │
+└──────────────┘           └──────────┬──────────┘
+                                      │
+                                      ▼
+                            ┌─────────────────────┐
+                            │ SchedulerOrchestrator│
+                            │       ↓              │
+                            │   TaskExecutor       │
+                            │       ↓              │
+                            │   QuotaManager       │
+                            └──────────┬──────────┘
+                                       │
+                                       ▼
+                            ┌─────────────────────┐
+                            │ 现有 Downloader 体系  │
+                            │ (BaseDownloader 等)  │
+                            └─────────────────────┘</div>
+        </section>
+
+        <!-- Section 4 -->
+        <section id="database">
+            <h2>4. 数据库设计</h2>
+
+            <h3 id="db-tables">4.1 新增表清单</h3>
+            <table>
+                <thead><tr><th>序号</th><th>表名</th><th>说明</th></tr></thead>
+                <tbody>
+                    <tr><td>1</td><td><code>scheduler_tasks</code></td><td>调度任务定义（配置持久化）</td></tr>
+                    <tr><td>2</td><td><code>scheduler_runs</code></td><td>调度运行记录（每次执行的历史）</td></tr>
+                    <tr><td>3</td><td><code>scheduler_task_runs</code></td><td>任务级执行记录（每个任务的执行结果）</td></tr>
+                    <tr><td>4</td><td><code>quota_allocation</code></td><td>配额分配与消耗记录</td></tr>
+                </tbody>
+            </table>
+
+            <h3 id="db-schema">4.2 表结构</h3>
+
+            <h4>4.2.1 <code>scheduler_tasks</code> — 调度任务定义</h4>
+            <pre><code>CREATE TABLE IF NOT EXISTS scheduler_tasks (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_name       TEXT    NOT NULL UNIQUE,
+    data_category   TEXT    NOT NULL,
+    data_subcategory TEXT,
+    target_tables   TEXT    NOT NULL,
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    priority        INTEGER NOT NULL DEFAULT 10,
+    schedule_type   TEXT    NOT NULL DEFAULT 'on_startup',
+    schedule_config TEXT,
+    download_params TEXT,
+    quota_config    TEXT,
+    retry_policy    TEXT,
+    created_at      TEXT    NOT NULL,
+    updated_at      TEXT    NOT NULL
+);</code></pre>
+
+            <h4>4.2.2 <code>scheduler_runs</code> — 调度运行记录</h4>
+            <pre><code>CREATE TABLE IF NOT EXISTS scheduler_runs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id          TEXT    NOT NULL UNIQUE,
+    trigger_type    TEXT    NOT NULL,
+    started_at      TEXT    NOT NULL,
+    finished_at     TEXT,
+    status          TEXT    NOT NULL DEFAULT 'running',
+    total_tasks     INTEGER NOT NULL DEFAULT 0,
+    completed_tasks INTEGER NOT NULL DEFAULT 0,
+    failed_tasks    INTEGER NOT NULL DEFAULT 0,
+    skipped_tasks   INTEGER NOT NULL DEFAULT 0,
+    total_requests  INTEGER NOT NULL DEFAULT 0,
+    total_rows      INTEGER NOT NULL DEFAULT 0,
+    error_message   TEXT,
+    config_snapshot TEXT
+);</code></pre>
+
+            <h4>4.2.3 <code>scheduler_task_runs</code> — 任务级执行记录</h4>
+            <pre><code>CREATE TABLE IF NOT EXISTS scheduler_task_runs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id          TEXT    NOT NULL,
+    task_name       TEXT    NOT NULL,
+    started_at      TEXT    NOT NULL,
+    finished_at     TEXT,
+    status          TEXT    NOT NULL DEFAULT 'running',
+    requests_used   INTEGER NOT NULL DEFAULT 0,
+    rows_fetched    INTEGER NOT NULL DEFAULT 0,
+    tables_updated  TEXT,
+    error_message   TEXT,
+    checkpoint      TEXT,
+    duration_seconds REAL
+);
+
+CREATE INDEX idx_task_runs_run_id ON scheduler_task_runs(run_id);
+CREATE INDEX idx_task_runs_task_name ON scheduler_task_runs(task_name);</code></pre>
+
+            <h4>4.2.4 <code>quota_allocation</code> — 配额分配与消耗</h4>
+            <pre><code>CREATE TABLE IF NOT EXISTS quota_allocation (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    date            TEXT    NOT NULL,
+    task_name       TEXT    NOT NULL,
+    allocated       INTEGER NOT NULL DEFAULT 0,
+    consumed        INTEGER NOT NULL DEFAULT 0,
+    remaining       INTEGER NOT NULL DEFAULT 0,
+    updated_at      TEXT,
+    UNIQUE(date, task_name)
+);
+
+CREATE INDEX idx_quota_date ON quota_allocation(date);</code></pre>
+
+            <h3 id="db-relation">4.3 与现有表的关系</h3>
+            <div class="diagram">现有表                          新增调度表
+┌──────────────┐               ┌──────────────────┐
+│ request_count│◄──────────────│ quota_allocation │
+│ (每日总计数)  │   读取/更新    │ (按任务分配)      │
+└──────────────┘               └──────────────────┘
+
+                               ┌──────────────────┐
+                               │ scheduler_tasks  │
+                               │ (任务定义)        │
+                               └────────┬─────────┘
+                                        │
+                               ┌────────▼─────────┐
+                               │ scheduler_runs   │
+                               │ (运行记录)        │
+                               └────────┬─────────┘
+                                        │
+                               ┌────────▼─────────┐
+                               │scheduler_task_runs│
+                               │ (任务执行记录)    │
+                               └──────────────────┘</div>
+        </section>
+
+        <!-- Section 5 -->
+        <section id="config-model">
+            <h2>5. 调度配置模型</h2>
+
+            <h3 id="config-yaml">5.1 <code>scheduler.yaml</code> 文件格式</h3>
+            <pre><code># 全局设置
+global:
+  daily_request_limit: 49000
+  enabled: true
+  default_retry:
+    max_retries: 3
+    backoff_base: 2
+
+# 任务定义列表（按 priority 从小到大排序执行）
+tasks:
+  - name: meta_basic
+    category: meta
+    subcategory: basic
+    tables: ["stock_basic", "trade_dates", "stock_industry"]
+    enabled: true
+    priority: 1
+    schedule:
+      type: on_startup
+      trading_day_only: false
+    download_params:
+      full_refresh: true
+    quota:
+      max_requests: 50
+      share_of_daily_limit: 0.001
+
+  - name: kline_daily
+    category: kline
+    subcategory: daily
+    tables: ["all_stock_daily"]
+    enabled: true
+    priority: 5
+    schedule:
+      type: daily
+      trading_day_only: true
+      time_window:
+        start: "01:00"
+        end: "06:00"
+      max_duration_minutes: 180
+    download_params:
+      start_date: "1990-12-19"
+      end_date: auto
+      end_offset_days: -1
+      adjustflags: [1, 2, 3]
+      batch_size: 200
+      batch_sleep: 2
+    quota:
+      max_requests: 30000
+      share_of_daily_limit: 0.6</code></pre>
+
+            <h3 id="config-fields">5.2 配置字段说明</h3>
+
+            <h4>任务级字段</h4>
+            <table>
+                <thead><tr><th>字段</th><th>类型</th><th>必填</th><th>默认值</th><th>说明</th></tr></thead>
+                <tbody>
+                    <tr><td><code>name</code></td><td>string</td><td>是</td><td>—</td><td>任务唯一标识</td></tr>
+                    <tr><td><code>category</code></td><td>string</td><td>是</td><td>—</td><td>数据大类，映射到具体 Downloader</td></tr>
+                    <tr><td><code>subcategory</code></td><td>string</td><td>否</td><td>null</td><td>数据子类</td></tr>
+                    <tr><td><code>tables</code></td><td>array</td><td>是</td><td>—</td><td>目标数据库表名列表</td></tr>
+                    <tr><td><code>enabled</code></td><td>bool</td><td>否</td><td>true</td><td>是否启用</td></tr>
+                    <tr><td><code>priority</code></td><td>int</td><td>否</td><td>10</td><td>执行优先级（小→大）</td></tr>
+                    <tr><td><code>schedule</code></td><td>object</td><td>否</td><td>见下文</td><td>调度策略</td></tr>
+                    <tr><td><code>download_params</code></td><td>object</td><td>否</td><td>{}</td><td>传递给 Downloader 的参数</td></tr>
+                    <tr><td><code>quota</code></td><td>object</td><td>否</td><td>{}</td><td>配额限制</td></tr>
+                    <tr><td><code>retry</code></td><td>object</td><td>否</td><td>继承 global</td><td>重试策略</td></tr>
+                </tbody>
+            </table>
+
+            <h4><code>schedule</code> 字段</h4>
+            <table>
+                <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+                <tbody>
+                    <tr><td><code>type</code></td><td>string</td><td><code>on_startup</code> / <code>daily</code> / <code>weekly</code> / <code>monthly</code> / <code>manual</code></td></tr>
+                    <tr><td><code>weekdays</code></td><td>array</td><td>允许执行的星期，<code>[1,2,3,4,5]</code> 表示工作日</td></tr>
+                    <tr><td><code>trading_day_only</code></td><td>bool</td><td>是否仅交易日执行</td></tr>
+                    <tr><td><code>time_window</code></td><td>object</td><td>执行时间窗口 <code>{start: "01:00", end: "06:00"}</code></td></tr>
+                    <tr><td><code>max_duration_minutes</code></td><td>int</td><td>最大执行时长</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Section 6 -->
+        <section id="core-modules">
+            <h2>6. 核心模块设计</h2>
+
+            <h3 id="mod-config">6.1 <code>SchedulerConfig</code> — 配置加载器</h3>
+            <p><strong>文件</strong>: <code>src/scheduler/config.py</code></p>
+            <ul>
+                <li>解析 <code>scheduler.yaml</code> 为结构化对象</li>
+                <li>提供任务查询接口</li>
+                <li>配置校验（必填字段、类型检查）</li>
+                <li>配置缓存（避免重复读取文件）</li>
+            </ul>
+
+            <h3 id="mod-quota">6.2 <code>QuotaManager</code> — 配额管理器</h3>
+            <p><strong>文件</strong>: <code>src/scheduler/quota.py</code></p>
+            <ul>
+                <li>为任务列表分配配额（固定配额 / 比例分配）</li>
+                <li>检查任务是否还有可用配额</li>
+                <li>消耗配额并返回结果</li>
+                <li>获取任务/全局剩余配额</li>
+                <li>将配额状态写入 <code>quota_allocation</code> 表</li>
+            </ul>
+
+            <h3 id="mod-executor">6.3 <code>TaskExecutor</code> — 任务执行器</h3>
+            <p><strong>文件</strong>: <code>src/scheduler/executor.py</code></p>
+            <ul>
+                <li>维护 category → Downloader 映射表</li>
+                <li>解析任务的日期范围（支持 auto 模式）</li>
+                <li>根据 category + subcategory 确定调用方法</li>
+                <li>实例化对应 Downloader 并执行下载</li>
+                <li>记录执行结果并更新配额消耗</li>
+            </ul>
+
+            <h3 id="mod-orchestrator">6.4 <code>SchedulerOrchestrator</code> — 调度编排器</h3>
+            <p><strong>文件</strong>: <code>src/scheduler/orchestrator.py</code></p>
+            <ul>
+                <li>加载配置，获取已启用任务列表</li>
+                <li>创建 <code>scheduler_runs</code> 记录</li>
+                <li>初始化 QuotaManager 并分配配额</li>
+                <li>筛选可执行任务（时间窗口、交易日等）</li>
+                <li>按 priority 排序后依次执行</li>
+                <li>处理中断/失败，更新运行状态</li>
+            </ul>
+
+            <h3 id="mod-structure">6.5 模块目录结构</h3>
+            <div class="diagram">src/
+├── scheduler/
+│   ├── __init__.py          # 包初始化，导出核心类
+│   ├── config.py            # SchedulerConfig + 数据类
+│   ├── orchestrator.py      # SchedulerOrchestrator
+│   ├── executor.py          # TaskExecutor + CATEGORY_MAP
+│   ├── quota.py             # QuotaManager
+│   └── models.py            # 数据模型（dataclass 定义）</div>
+        </section>
+
+        <!-- Section 7 -->
+        <section id="flow">
+            <h2>7. 执行流程</h2>
+
+            <h3 id="flow-startup">7.1 程序启动流程（调度器模式）</h3>
+            <div class="diagram">start.sh scheduled
+    ↓
+scripts/run_scheduler.py
+    ↓
+┌─────────────────────────────────────────────┐
+│ 1. 初始化日志                                │
+│ 2. 初始化数据库表（含调度表）                  │
+│ 3. 加载 scheduler.yaml                       │
+│ 4. 检查 global.enabled                      │
+│    ↓ false → 回退到原有 download_all.py       │
+│    ↓ true → 继续                             │
+│ 5. 创建 SchedulerOrchestrator                │
+│ 6. orchestrator.run(trigger_type="startup")  │
+│    ↓                                         │
+│    a. 加载配置，获取已启用任务列表              │
+│    b. 创建 scheduler_runs 记录                │
+│    c. 初始化 QuotaManager                     │
+│    d. 分配配额                                │
+│    e. 筛选可执行任务                           │
+│    f. 按 priority 排序                       │
+│    g. 依次执行每个任务:                        │
+│       - 检查时间窗口                          │
+│       - 检查交易日                            │
+│       - 检查配额                              │
+│       - 实例化 Downloader                     │
+│       - 执行下载                              │
+│       - 记录结果                              │
+│    h. 更新 scheduler_runs 状态                │
+│    i. 持久化配额状态                           │
+│ 7. 输出运行摘要                               │
+└─────────────────────────────────────────────┘</div>
+
+            <h3 id="flow-task">7.2 任务执行详细流程</h3>
+            <div class="diagram">执行任务 "kline_daily"
+    ↓
+1. 检查任务是否应该执行
+   - enabled? ✓
+   - schedule.type 匹配? ✓
+   - 时间窗口 [01:00, 06:00]? 当前 02:30 ✓
+   - 交易日? ✓
+
+2. 检查配额
+   - allocated: 30000
+   - consumed: 0
+   - remaining: 30000 ✓
+
+3. 创建 scheduler_task_runs 记录 (status = "running")
+
+4. 解析日期范围
+   - start_date: "1990-12-19"
+   - end_date: auto → 计算为 "2026-05-15"
+   - DB max_date: "2026-05-14"
+   - 实际拉取: "2026-05-15" → "2026-05-15"
+
+5. 实例化 KlineDownloader
+
+6. 执行 download_daily_kline()
+   - 获取股票列表
+   - 分批处理（batch_size=200）
+   - 每批检查配额是否充足
+
+7. 记录执行结果
+   - status: "completed"
+   - requests_used: 15234
+   - rows_fetched: 2345678
+   - duration_seconds: 3456.7
+
+8. 更新配额消耗 (consumed += 15234)
+
+9. 提交 scheduler_task_runs</div>
+
+            <h3 id="flow-recovery">7.3 中断恢复流程</h3>
+            <div class="diagram">程序收到 SIGINT / SIGTERM
+    ↓
+1. 捕获信号
+2. 当前任务保存 checkpoint
+3. 更新 scheduler_task_runs: status = "interrupted"
+4. 更新 scheduler_runs: status = "interrupted"
+5. 优雅退出
+
+下次启动时:
+1. 读取 scheduler_task_runs
+2. 找到 interrupted 状态的任务
+3. 从 checkpoint 恢复
+4. 继续执行</div>
+        </section>
+
+        <!-- Section 8 -->
+        <section id="quota">
+            <h2>8. API 请求配额管理</h2>
+
+            <h3 id="quota-levels">8.1 配额层级</h3>
+            <div class="diagram">每日总配额 (global.daily_request_limit = 49000)
+    │
+    ├── 按比例分配 (share_of_daily_limit)
+    │   ├── kline_daily:     60% → 29400
+    │   ├── kline_weekly:    10% → 4900
+    │   └── ...
+    │
+    └── 按固定值分配 (max_requests)
+        ├── meta_basic:      50
+        ├── macro_data:      200
+        └── ...</div>
+
+            <h3 id="quota-check">8.2 配额检查时机</h3>
+            <table>
+                <thead><tr><th>时机</th><th>检查内容</th><th>动作</th></tr></thead>
+                <tbody>
+                    <tr><td>任务开始前</td><td>全局剩余配额 + 任务剩余配额</td><td>配额不足 → 跳过任务</td></tr>
+                    <tr><td>每批下载前</td><td>任务剩余配额</td><td>配额不足 → 保存 checkpoint，结束任务</td></tr>
+                    <tr><td>每次 API 调用后</td><td>全局 + 任务配额</td><td>触发上限 → 优雅退出</td></tr>
+                    <tr><td>任务完成后</td><td>记录实际消耗</td><td>写入 <code>quota_allocation</code></td></tr>
+                </tbody>
+            </table>
+
+            <h3 id="quota-degrade">8.3 配额不足时的降级策略</h3>
+            <pre><code>if quota_exceeded:
+    if task.retry.get("skip_on_quota_exceeded"):
+        # 跳过该任务，继续执行后续任务
+        mark_skipped(reason="quota_exceeded")
+        continue
+    else:
+        # 保存 checkpoint，终止当前任务
+        save_checkpoint()
+        mark_interrupted(reason="quota_exceeded")
+        # 继续执行后续任务（非阻塞模式）
+        continue</code></pre>
+        </section>
+
+        <!-- Section 9 -->
+        <section id="error">
+            <h2>9. 异常处理与恢复</h2>
+
+            <h3>9.1 异常分类</h3>
+            <table>
+                <thead><tr><th>异常类型</th><th>处理方式</th><th>是否重试</th></tr></thead>
+                <tbody>
+                    <tr><td>网络超时</td><td>指数退避重试</td><td>是</td></tr>
+                    <tr><td>API 会话过期</td><td>重新登录后重试</td><td>是</td></tr>
+                    <tr><td>配额不足</td><td>保存 checkpoint，跳过</td><td>否</td></tr>
+                    <tr><td>数据库锁定</td><td>等待 30s 后重试</td><td>是</td></tr>
+                    <tr><td>数据解析错误</td><td>记录错误，跳过该条</td><td>否</td></tr>
+                    <tr><td>磁盘空间不足</td><td>终止调度，告警</td><td>否</td></tr>
+                </tbody>
+            </table>
+
+            <h3>9.2 运行状态机</h3>
+            <div class="diagram">                    ┌─────────┐
+                    │ running │
+                    └────┬────┘
+                         │
+            ┌────────────┼────────────┐
+            │            │            │
+            ▼            ▼            ▼
+      ┌──────────┐ ┌─────────┐ ┌───────────┐
+      │completed │ │ failed  │ │interrupted│
+      └──────────┘ └─────────┘ └───────────┘</div>
+        </section>
+
+        <!-- Section 10 -->
+        <section id="integration">
+            <h2>10. 与现有系统集成</h2>
+
+            <h3>10.1 入口脚本</h3>
+            <p>新增 <code>scripts/run_scheduler.py</code> 作为调度器入口。</p>
+
+            <h3>10.2 <code>start.sh</code> 新增命令</h3>
+            <pre><code>cmd_scheduled() {
+    run "$PYTHON ${SCRIPT_DIR}/scripts/run_scheduler.py $*" "Scheduled Download"
+}
+
+# 在 case 语句中增加：
+scheduled)  cmd_scheduled "$@" ;;</code></pre>
+
+            <h3>10.3 <code>DBManager</code> 扩展</h3>
+            <p>新增 <code>init_scheduler_tables()</code> 方法，初始化调度相关 4 张表。</p>
+
+            <h3>10.4 向后兼容</h3>
+            <table>
+                <thead><tr><th>原有方式</th><th>状态</th><th>说明</th></tr></thead>
+                <tbody>
+                    <tr><td><code>start.sh full</code></td><td>保留</td><td>不受调度器影响</td></tr>
+                    <tr><td><code>start.sh update</code></td><td>保留</td><td>不受调度器影响</td></tr>
+                    <tr><td><code>start.sh scheduled</code></td><td>新增</td><td>基于调度器的下载方式</td></tr>
+                    <tr><td><code>config.yaml</code></td><td>保留</td><td>调度器读取 <code>scheduler.yaml</code>，不依赖 <code>config.yaml</code></td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Section 11 -->
+        <section id="migration">
+            <h2>11. 配置迁移方案</h2>
+
+            <h3>11.1 从 <code>config.yaml</code> 迁移到 <code>scheduler.yaml</code></h3>
+            <table>
+                <thead><tr><th>config.yaml 字段</th><th>scheduler.yaml 对应</th><th>迁移规则</th></tr></thead>
+                <tbody>
+                    <tr><td><code>api.daily_request_limit</code></td><td><code>global.daily_request_limit</code></td><td>直接迁移</td></tr>
+                    <tr><td><code>download.kline.daily.enabled</code></td><td><code>tasks[].enabled</code> (kline_daily)</td><td>映射到对应任务</td></tr>
+                    <tr><td><code>download.kline.daily.start_date</code></td><td><code>tasks[].download_params.start_date</code></td><td>直接迁移</td></tr>
+                    <tr><td><code>download.kline.daily.adjustflags</code></td><td><code>tasks[].download_params.adjustflags</code></td><td>直接迁移</td></tr>
+                    <tr><td><code>download.financial.start_year</code></td><td><code>tasks[].download_params.start_year</code></td><td>直接迁移</td></tr>
+                    <tr><td><code>stocks.batch_size</code></td><td><code>tasks[].download_params.batch_size</code></td><td>迁移到各任务</td></tr>
+                </tbody>
+            </table>
+
+            <h3>11.2 自动迁移脚本</h3>
+            <p>提供 <code>scripts/migrate_to_scheduler.py</code>，读取 <code>config.yaml</code> 生成初始 <code>scheduler.yaml</code>。</p>
+        </section>
+
+        <!-- Section 12 -->
+        <section id="examples">
+            <h2>12. 使用示例</h2>
+
+            <h3>12.1 基本使用</h3>
+            <pre><code># 1. 生成初始调度配置
+.venv/bin/python scripts/migrate_to_scheduler.py
+
+# 2. 编辑 scheduler.yaml，调整任务参数
+vim scheduler.yaml
+
+# 3. 运行调度器
+./start.sh scheduled
+
+# 4. 查看运行记录
+.venv/bin/python scripts/query_scheduler_status.py</code></pre>
+
+            <h3>12.2 查询调度状态（SQL）</h3>
+            <pre><code>-- 查看最近一次调度运行
+SELECT * FROM scheduler_runs ORDER BY started_at DESC LIMIT 1;
+
+-- 查看各任务执行情况
+SELECT task_name, status, requests_used, rows_fetched, duration_seconds
+FROM scheduler_task_runs
+WHERE run_id = (SELECT run_id FROM scheduler_runs ORDER BY started_at DESC LIMIT 1)
+ORDER BY priority;
+
+-- 查看配额使用情况
+SELECT task_name, allocated, consumed, remaining
+FROM quota_allocation
+WHERE date = date('now');</code></pre>
+
+            <h3>12.3 典型场景配置</h3>
+
+            <h4>场景 A：仅更新 K 线日线</h4>
+            <blockquote>将 <code>kline_daily</code> 的 <code>share_of_daily_limit</code> 设为 0.9，其他任务禁用。</blockquote>
+
+            <h4>场景 B：全量数据初始化</h4>
+            <blockquote>提高 <code>daily_request_limit</code> 至 95000，所有任务启用，财务数据设置 <code>current_quarter_only: false</code>。</blockquote>
+
+            <h4>场景 C：仅工作日凌晨更新</h4>
+            <blockquote>设置 <code>weekdays: [1,2,3,4,5]</code> + <code>trading_day_only: true</code> + <code>time_window: 01:00-06:00</code>。</blockquote>
+        </section>
+
+        <!-- Section 13 -->
+        <section id="extensions">
+            <h2>13. 扩展方向</h2>
+
+            <h3>13.1 短期扩展</h3>
+            <table>
+                <thead><tr><th>方向</th><th>说明</th></tr></thead>
+                <tbody>
+                    <tr><td>Cron 支持</td><td>集成 APScheduler 实现定时触发，无需外部 cron</td></tr>
+                    <tr><td>Web 管理界面</td><td>通过 Flask/FastAPI 提供任务配置和状态查看</td></tr>
+                    <tr><td>邮件/钉钉通知</td><td>调度完成后发送运行摘要</td></tr>
+                    <tr><td>配置热加载</td><td>运行中检测 <code>scheduler.yaml</code> 变更并重新加载</td></tr>
+                </tbody>
+            </table>
+
+            <h3>13.2 中期扩展</h3>
+            <table>
+                <thead><tr><th>方向</th><th>说明</th></tr></thead>
+                <tbody>
+                    <tr><td>多数据源</td><td>支持从其他 API 源拉取数据</td></tr>
+                    <tr><td>数据校验</td><td>调度完成后自动运行 DataValidator</td></tr>
+                    <tr><td>增量策略优化</td><td>基于表 MAX(date) 自动计算最优拉取范围</td></tr>
+                    <tr><td>配额动态调整</td><td>根据历史消耗自动调整配额分配</td></tr>
+                </tbody>
+            </table>
+
+            <h3>13.3 长期扩展</h3>
+            <table>
+                <thead><tr><th>方向</th><th>说明</th></tr></thead>
+                <tbody>
+                    <tr><td>分布式调度</td><td>多节点协同，按股票范围分片下载</td></tr>
+                    <tr><td>数据管道</td><td>调度完成后触发下游 ETL 任务</td></tr>
+                    <tr><td>监控告警</td><td>集成 Prometheus/Grafana 监控调度健康度</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <hr>
+
+        <!-- Appendix A -->
+        <section id="appendix-a">
+            <h2>附录 A：Category → Downloader 映射表</h2>
+            <table>
+                <thead><tr><th>category</th><th>subcategory</th><th>Downloader</th><th>调用方法</th><th>目标表</th></tr></thead>
+                <tbody>
+                    <tr><td><code>meta</code></td><td><code>basic</code></td><td>MetaDownloader</td><td><code>download_all_metadata()</code></td><td>stock_basic, trade_dates, stock_industry</td></tr>
+                    <tr><td><code>component</code></td><td>—</td><td>ComponentDownloader</td><td><code>download_all_components()</code></td><td>sz50_stocks, hs300_stocks, zz500_stocks</td></tr>
+                    <tr><td><code>macro</code></td><td>—</td><td>MacroDownloader</td><td><code>download_all_macro()</code></td><td>deposit_rate, loan_rate, reserve_ratio, money_supply_*</td></tr>
+                    <tr><td><code>index</code></td><td><code>kline</code></td><td>IndexDownloader</td><td><code>download_all_index()</code></td><td>index_daily, index_weekly, index_monthly</td></tr>
+                    <tr><td><code>kline</code></td><td><code>daily</code></td><td>KlineDownloader</td><td><code>download_daily_kline()</code></td><td>all_stock_daily</td></tr>
+                    <tr><td><code>kline</code></td><td><code>weekly</code></td><td>KlineDownloader</td><td><code>download_weekly_kline()</code></td><td>all_stock_weekly</td></tr>
+                    <tr><td><code>kline</code></td><td><code>monthly</code></td><td>KlineDownloader</td><td><code>download_monthly_kline()</code></td><td>all_stock_monthly</td></tr>
+                    <tr><td><code>kline</code></td><td><code>minute</code></td><td>KlineDownloader</td><td><code>download_minute_kline()</code></td><td>all_stock_5min, all_stock_15min, ...</td></tr>
+                    <tr><td><code>financial</code></td><td>—</td><td>FinancialDownloader</td><td><code>download_all_financial()</code></td><td>profit_data, operation_data, ...</td></tr>
+                    <tr><td><code>report</code></td><td>—</td><td>ReportDownloader</td><td><code>download_all_reports()</code></td><td>performance_express, forecast_report</td></tr>
+                    <tr><td><code>dividend</code></td><td>—</td><td>DividendDownloader</td><td><code>download_all_dividend()</code></td><td>dividend, adjust_factor</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Appendix B -->
+        <section id="appendix-b">
+            <h2>附录 B：调度状态查询 SQL 汇总</h2>
+            <pre><code>-- 1. 查看所有任务定义
+SELECT task_name, category, enabled, priority, schedule_type
+FROM scheduler_tasks
+ORDER BY priority;
+
+-- 2. 查看最近 7 天运行记录
+SELECT run_id, trigger_type, started_at, finished_at, status,
+       total_tasks, completed_tasks, failed_tasks
+FROM scheduler_runs
+WHERE started_at >= date('now', '-7 days')
+ORDER BY started_at DESC;
+
+-- 3. 查看今日配额使用
+SELECT task_name, allocated, consumed, remaining,
+       ROUND(100.0 * consumed / NULLIF(allocated, 0), 1) as usage_pct
+FROM quota_allocation
+WHERE date = date('now')
+ORDER BY consumed DESC;
+
+-- 4. 查看失败最多的任务
+SELECT task_name, COUNT(*) as fail_count
+FROM scheduler_task_runs
+WHERE status = 'failed'
+GROUP BY task_name
+ORDER BY fail_count DESC
+LIMIT 10;
+
+-- 5. 查看平均执行时长
+SELECT task_name,
+       ROUND(AVG(duration_seconds), 1) as avg_seconds,
+       ROUND(MIN(duration_seconds), 1) as min_seconds,
+       ROUND(MAX(duration_seconds), 1) as max_seconds
+FROM scheduler_task_runs
+WHERE status = 'completed'
+GROUP BY task_name;</code></pre>
+        </section>
+
+        <!-- Appendix C -->
+        <section id="appendix-c">
+            <h2>附录 C：文件清单</h2>
+            <table>
+                <thead><tr><th>文件路径</th><th>类型</th><th>说明</th></tr></thead>
+                <tbody>
+                    <tr><td><code>scheduler.yaml</code></td><td>配置文件</td><td>调度任务定义（用户编辑）</td></tr>
+                    <tr><td><code>src/scheduler/__init__.py</code></td><td>模块</td><td>包初始化</td></tr>
+                    <tr><td><code>src/scheduler/config.py</code></td><td>源码</td><td>SchedulerConfig 配置加载器</td></tr>
+                    <tr><td><code>src/scheduler/orchestrator.py</code></td><td>源码</td><td>SchedulerOrchestrator 编排器</td></tr>
+                    <tr><td><code>src/scheduler/executor.py</code></td><td>源码</td><td>TaskExecutor 任务执行器</td></tr>
+                    <tr><td><code>src/scheduler/quota.py</code></td><td>源码</td><td>QuotaManager 配额管理器</td></tr>
+                    <tr><td><code>src/scheduler/models.py</code></td><td>源码</td><td>数据模型定义</td></tr>
+                    <tr><td><code>scripts/run_scheduler.py</code></td><td>脚本</td><td>调度器入口</td></tr>
+                    <tr><td><code>scripts/migrate_to_scheduler.py</code></td><td>脚本</td><td>配置迁移工具</td></tr>
+                    <tr><td><code>scripts/query_scheduler_status.py</code></td><td>脚本</td><td>状态查询工具</td></tr>
+                    <tr><td><code>docs/调度方案详细设计.md</code></td><td>文档</td><td>本设计文档</td></tr>
+                    <tr><td><code>docs/调度方案详细设计.html</code></td><td>文档</td><td>HTML 版设计文档</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- Footer -->
+        <div class="doc-footer">
+            <p>文档最后更新：2026年5月16日 &middot; BaoStock 数据拉取任务调度器 v1.0</p>
+        </div>
+    </div>
+</body>
+</html>
