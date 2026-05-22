@@ -87,23 +87,39 @@ def main():
             else:
                 logger.info(f"No new trading day found. Skipping daily K-line update.")
 
-            # 周线/月线：不受交易日限制，始终拉取
-            weekly_start = (
-                datetime.strptime(db.get_max_date("all_stock_weekly") or "1990-12-19", "%Y-%m-%d")
-                + timedelta(days=1)
-            ).strftime("%Y-%m-%d")
-            monthly_start = (
-                datetime.strptime(db.get_max_date("all_stock_monthly") or "1990-12-19", "%Y-%m-%d")
-                + timedelta(days=1)
-            ).strftime("%Y-%m-%d")
+            # 周线：距上次周线数据 >= 7 天才下载（跨周才有新数据），节省 ~16K 次/天 API 请求
+            target_dt = datetime.strptime(target_date, "%Y-%m-%d")
+            latest_weekly = datetime.strptime(db.get_max_date("all_stock_weekly") or "1990-12-19", "%Y-%m-%d")
+            should_update_weekly = (target_dt - latest_weekly).days >= 7
 
-            if target_date >= weekly_start:
-                logger.info(f"Updating weekly K-line: {weekly_start} → {target_date}")
-                dl.download_weekly_kline(codes, start_date=weekly_start, end_date=target_date)
+            # 月线：仅每月前 3 个交易日下载，节省 ~16K 次/天 API 请求
+            latest_monthly = datetime.strptime(db.get_max_date("all_stock_monthly") or "1990-12-19", "%Y-%m-%d")
+            first_day_of_month = target_dt.replace(day=1)
+            trading_days_so_far = db.get_trading_days_in_range(
+                first_day_of_month.strftime("%Y-%m-%d"),
+                target_date,
+            )
+            should_update_monthly = len(trading_days_so_far) <= 3
 
-            if target_date >= monthly_start:
-                logger.info(f"Updating monthly K-line: {monthly_start} → {target_date}")
-                dl.download_monthly_kline(codes, start_date=monthly_start, end_date=target_date)
+            if should_update_weekly:
+                weekly_start = (latest_weekly + timedelta(days=1)).strftime("%Y-%m-%d")
+                if target_date >= weekly_start:
+                    logger.info(f"Updating weekly K-line: {weekly_start} → {target_date}")
+                    dl.download_weekly_kline(codes, start_date=weekly_start, end_date=target_date)
+                else:
+                    logger.info("Weekly K-line is up to date. Skipping.")
+            else:
+                logger.info(f"Skipping weekly K-line (latest: {latest_weekly.strftime('%Y-%m-%d')}, {(target_dt - latest_weekly).days}d < 7d).")
+
+            if should_update_monthly:
+                monthly_start = (latest_monthly + timedelta(days=1)).strftime("%Y-%m-%d")
+                if target_date >= monthly_start:
+                    logger.info(f"Updating monthly K-line: {monthly_start} → {target_date}")
+                    dl.download_monthly_kline(codes, start_date=monthly_start, end_date=target_date)
+                else:
+                    logger.info("Monthly K-line is up to date. Skipping.")
+            else:
+                logger.info(f"Skipping monthly K-line (latest: {latest_monthly.strftime('%Y-%m-%d')}, {len(trading_days_so_far)} trading days into month).")
     else:
         logger.info(f"No new trading data found on or before {target_date}. Skipping K-line update.")
 

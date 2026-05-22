@@ -698,6 +698,16 @@ class DBManager:
         row = cursor.fetchone()
         return row[0] if row else None
 
+    def get_trading_days_in_range(self, start_date: str, end_date: str) -> list[str]:
+        conn = self.get_connection()
+        cursor = conn.execute(
+            "SELECT calendar_date FROM trade_dates "
+            "WHERE calendar_date >= ? AND calendar_date <= ? AND is_trading_day = 1 "
+            "ORDER BY calendar_date ASC",
+            (start_date, end_date),
+        )
+        return [row[0] for row in cursor.fetchall()]
+
     def migrate_schema(self) -> None:
         conn = self.get_connection()
         tables = {
