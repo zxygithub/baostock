@@ -151,15 +151,17 @@ def check_blacklist_status():
             bs.logout()
             return "⚠️ 异常", f"登录失败: {lg.error_msg}"
         
-        # Test a simple query
+        # Test a simple query (lightweight check)
         rs = bs.query_stock_basic(code="sh.600000")
-        bs.logout()
         
         if rs.error_code == "10001011":
+            bs.logout()
             return "❌ 黑名单", "查询时被限流或封禁"
         if rs.error_code != "0":
+            bs.logout()
             return "⚠️ 异常", f"查询失败: {rs.error_msg}"
             
+        bs.logout()
         return "✅ 正常", "IP/账号状态正常"
     except Exception as e:
         return "⚠️ 异常", f"检测出错: {e}"
