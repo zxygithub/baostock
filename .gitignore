@@ -148,3 +148,8 @@ tests/test_codes.txt
 # AI agent work directories
 .sisyphus/
 .claude/settings.local.json
+.understand-anything
+.qwen
+.remember
+.claude
+.sisyphus
