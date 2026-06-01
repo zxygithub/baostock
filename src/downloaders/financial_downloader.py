@@ -59,6 +59,12 @@ class FinancialDownloader(BaseDownloader):
                         else list(range(1, current_quarter + 1))
                     )
                 for quarter in quarters:
+                    # Skip current quarter: financial reports are not yet published
+                    if year == current_year and quarter == current_quarter:
+                        continue
+                    # Skip IPO year for growth_data: no YoY comparison available
+                    if table_name == "growth_data" and year == ipo_y:
+                        continue
                     candidates.append((code, year, quarter))
 
         tasks, skipped = self._find_missing_quarters(table_name, candidates)
