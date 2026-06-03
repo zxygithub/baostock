@@ -162,8 +162,13 @@ def main():
                         logger.info(f"Skipping weekly K-line (latest: {latest_weekly.strftime('%Y-%m-%d')}, {(target_dt - latest_weekly).days}d < 7d).")
                 if not dl._interrupted:
                     if should_update_monthly:
-                        monthly_start = (latest_monthly + timedelta(days=1)).strftime("%Y-%m-%d")
-                        if kline_end_date >= monthly_start:
+                        monthly_start_dt = latest_monthly + timedelta(days=1)
+                        monthly_start = monthly_start_dt.strftime("%Y-%m-%d")
+                        if monthly_start_dt.month == latest_monthly.month and monthly_start_dt.year == latest_monthly.year:
+                            logger.info(
+                                f"Skipping monthly K-line: start {monthly_start} still in same month as latest data ({latest_monthly.strftime('%Y-%m-%d')}), no complete new month to fetch."
+                            )
+                        elif kline_end_date >= monthly_start:
                             logger.info(f"Updating monthly K-line: {monthly_start} → {kline_end_date}")
                             kline_results["monthly"] = dl.download_monthly_kline(
                                 codes, start_date=monthly_start, end_date=kline_end_date,

@@ -399,6 +399,27 @@ resume = _get_resume_code(table, adjustflag, codes)
 - `_interrupted` 标志控制流程：中断后跳过后续频率下载
 - 批次间 sleep(batch_sleep)
 
+**周线/月线跳过策略（download_all.py / update_daily.py）:**
+
+```
+# 周线：距上次周线数据 >= 7 天才下载（节省 ~16K 次/天）
+should_update_weekly = (target_dt - latest_weekly).days >= 7
+
+# 月线：仅每月前 3 个交易日下载（节省 ~16K 次/天）
+should_update_monthly = len(trading_days_in_month_so_far) <= 3
+```
+
+**月线同月守卫（same-month guard）：**
+当月线下载触发后，还需检查 `monthly_start`（latest_monthly + 1天）是否与 `latest_monthly` 处于同一自然月。若同月，说明该月数据已下载完毕且下月尚未结束，跳过下载：
+
+```
+monthly_start_dt = latest_monthly + timedelta(days=1)
+if monthly_start_dt.month == latest_monthly.month:
+    skip  # 同月守卫：无完整新月份可拉取
+```
+
+> 此守卫避免了每月初前 2-3 个交易日重复触发月线下载导致的 ~16,600 次空请求（详见 `docs/rows_zero_analysis_2026-06-03.md`）。
+
 ---
 
 ### Phase 8: 分钟 K 线下载 (KlineDownloader)

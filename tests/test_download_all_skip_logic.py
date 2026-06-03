@@ -7,6 +7,7 @@ or network connection.
 Core rules under test:
 - Weekly: skip if (target_date - latest_weekly_date) < 7 days
 - Monthly: skip if trading days from month-start to target_date > 3
+- Monthly same-month guard: skip if monthly_start is in the same month as latest data
 - When downloading, use incremental start = latest_date + 1 day
 - When end_date < start_date, skip download as "up to date"
 """
@@ -95,6 +96,17 @@ def compute_should_update_monthly(
 ) -> bool:
     """Replicate monthly skip logic from download_all.py."""
     return len(trading_days_in_range) <= 3
+
+
+def should_skip_monthly_same_month(latest_monthly: str) -> bool:
+    """Replicate the same-month guard from download_all.py.
+
+    When monthly_start (latest_monthly + 1 day) falls in the same
+    month as latest_monthly, the new month has no complete data yet.
+    """
+    lm = datetime.strptime(latest_monthly, "%Y-%m-%d")
+    ms = lm + timedelta(days=1)
+    return ms.month == lm.month and ms.year == lm.year
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +200,44 @@ class TestMonthlySkipLogic:
         assert compute_should_update_monthly(
             "2026-05-15", "2026-05-06", trading_days
         ) is False
+
+
+# ---------------------------------------------------------------------------
+# Same-month guard tests (prevents redundant monthly requests)
+# ---------------------------------------------------------------------------
+
+class TestMonthlySameMonthGuard:
+    """Tests for the same-month guard that prevents downloading when
+    monthly_start falls in the same month as latest_monthly."""
+
+    def test_last_day_of_month_should_not_skip(self):
+        """latest_monthly=2026-04-30 → monthly_start=2026-05-01 (new month) → don't skip."""
+        assert should_skip_monthly_same_month("2026-04-30") is False
+
+    def test_may29_should_skip(self):
+        """latest_monthly=2026-05-29 → monthly_start=2026-05-30 (same month) → skip.
+        This is the exact 6/3 scenario from the bug report."""
+        assert should_skip_monthly_same_month("2026-05-29") is True
+
+    def test_last_day_feb_leap_year(self):
+        """latest_monthly=2024-02-29 (leap) → monthly_start=2024-03-01 → don't skip."""
+        assert should_skip_monthly_same_month("2024-02-29") is False
+
+    def test_last_day_feb_non_leap(self):
+        """latest_monthly=2025-02-28 → monthly_start=2025-03-01 → don't skip."""
+        assert should_skip_monthly_same_month("2025-02-28") is False
+
+    def test_mid_month_should_skip(self):
+        """latest_monthly=2026-05-15 → monthly_start=2026-05-16 (same month) → skip."""
+        assert should_skip_monthly_same_month("2026-05-15") is True
+
+    def test_last_day_of_year_should_not_skip(self):
+        """latest_monthly=2026-12-31 → monthly_start=2027-01-01 → don't skip."""
+        assert should_skip_monthly_same_month("2026-12-31") is False
+
+    def test_last_day_january_should_not_skip(self):
+        """latest_monthly=2026-01-31 → monthly_start=2026-02-01 (new month) → don't skip."""
+        assert should_skip_monthly_same_month("2026-01-31") is False
 
 
 # ---------------------------------------------------------------------------
