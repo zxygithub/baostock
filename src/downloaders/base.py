@@ -278,10 +278,12 @@ class BaseDownloader:
                 if rs.error_code == "0":
                     return wrapped
                 wrapped.mark_error()
-                if "session" in rs.error_msg.lower() or "网络" in rs.error_msg:
+                msg = rs.error_msg.lower()
+                if "session" in msg or "网络" in msg or "未登录" in msg:
                     self.logger.warning(
-                        f"Session/network error, re-logging in: {rs.error_msg}"
+                        f"Session/login error, waiting 2s then re-logging in: {rs.error_msg}"
                     )
+                    time.sleep(2)
                     try:
                         self.logout()
                     except Exception:
