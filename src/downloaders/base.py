@@ -377,3 +377,11 @@ class BaseDownloader:
             out_y = int(out[:4]) if out and out[:4].isdigit() else end_year
             stock_years[code] = (ipo_y, out_y)
         return stock_years
+
+    def get_stock_ipo_dates(
+        self,
+    ) -> dict[str, tuple[str | None, str | None]]:
+        rows = self.conn.execute(
+            "SELECT code, ipo_date, out_date FROM stock_basic"
+        ).fetchall()
+        return {row[0]: (row[1], row[2]) for row in rows}

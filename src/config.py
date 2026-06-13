@@ -20,7 +20,7 @@ DB_PATH: Path = Path(__file__).parent.parent / "data" / "baostock.db"
 # ---------------------------------------------------------------------------
 
 FINANCIAL_SLEEP: float = 0.5  # seconds between financial API calls
-LOGIN_REFRESH_INTERVAL: int = 1800  # seconds (30 min) before re-login
+LOGIN_REFRESH_INTERVAL: int = 900  # seconds (15 min) before re-login
 MAX_RETRIES: int = 3  # maximum number of retry attempts
 
 # ---------------------------------------------------------------------------

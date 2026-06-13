@@ -594,7 +594,7 @@ for code, year, quarter in all_combinations:
 │  每次 API 调用                                       │
 │  ┌───────────────────────────────────────────────┐  │
 │  │  1. ensure_login()                            │  │
-│  │     if time.time() - _login_time > 1800s:     │  │
+│  │     if time.time() - _login_time > 900s:     │  │
 │  │       logout() → login()                      │  │
 │  │                                               │  │
 │  │  2. 执行查询                                   │  │
@@ -672,7 +672,7 @@ for code, year, quarter in all_combinations:
 | `reports.start_date` | 2003-01-01 | config.yaml | 公司报告起始日期 |
 | `index_kline.start_date` | 2006-01-01 | config.yaml | 指数 K 线起始日期 |
 | `FINANCIAL_SLEEP` | 0.5 | src/config.py | 财务数据每次调用间隔 |
-| `LOGIN_REFRESH_INTERVAL` | 1800 | src/config.py | 会话刷新间隔（30分钟） |
+| `LOGIN_REFRESH_INTERVAL` | 900 | src/config.py | 会话刷新间隔（15分钟） |
 | `MAX_RETRIES` | 3 | src/config.py | 查询失败重试次数 |
 
 ---

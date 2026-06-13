@@ -32,6 +32,7 @@ class KlineDownloader(BaseDownloader):
         table: str,
         adjustflag: int = 3,
         resume_from: str | None = None,
+        ipo_dates: dict | None = None,
     ) -> int:
         total_rows = 0
         desc = f"{table} (adj={adjustflag})"
@@ -51,7 +52,13 @@ class KlineDownloader(BaseDownloader):
                     continue
 
                 last = self.get_last_downloaded(table, code, adjustflag=adjustflag)
-                actual_start = max(start_date, last) if last else start_date
+
+                stock_ipo = None
+                if ipo_dates and code in ipo_dates:
+                    stock_ipo = ipo_dates[code][0]
+
+                effective_start = max(start_date, stock_ipo) if stock_ipo else start_date
+                actual_start = max(effective_start, last) if last else effective_start
                 if last and last >= (end_date or "9999-99-99"):
                     self._checkpoint_data = {
                         "table": table,
@@ -110,6 +117,7 @@ class KlineDownloader(BaseDownloader):
         if start_date is None:
             start_date = get_kline_start_date("daily")
         total_rows = 0
+        ipo_dates = self.get_stock_ipo_dates()
         for adjustflag in [1, 2, 3]:
             self.logger.info(f"Downloading daily K-line (adjustflag={adjustflag})...")
             resume = self._get_resume_code("all_stock_daily", adjustflag, codes)
@@ -122,6 +130,7 @@ class KlineDownloader(BaseDownloader):
                 "all_stock_daily",
                 adjustflag,
                 resume,
+                ipo_dates=ipo_dates,
             )
             if self._interrupted:
                 break
@@ -138,6 +147,7 @@ class KlineDownloader(BaseDownloader):
         if start_date is None:
             start_date = get_kline_start_date("weekly")
         total_rows = 0
+        ipo_dates = self.get_stock_ipo_dates()
         for adjustflag in [1, 2, 3]:
             self.logger.info(f"Downloading weekly K-line (adjustflag={adjustflag})...")
             resume = self._get_resume_code("all_stock_weekly", adjustflag, codes)
@@ -150,6 +160,7 @@ class KlineDownloader(BaseDownloader):
                 "all_stock_weekly",
                 adjustflag,
                 resume,
+                ipo_dates=ipo_dates,
             )
             if self._interrupted:
                 break
@@ -166,6 +177,7 @@ class KlineDownloader(BaseDownloader):
         if start_date is None:
             start_date = get_kline_start_date("monthly")
         total_rows = 0
+        ipo_dates = self.get_stock_ipo_dates()
         for adjustflag in [1, 2, 3]:
             self.logger.info(f"Downloading monthly K-line (adjustflag={adjustflag})...")
             resume = self._get_resume_code("all_stock_monthly", adjustflag, codes)
@@ -178,6 +190,7 @@ class KlineDownloader(BaseDownloader):
                 "all_stock_monthly",
                 adjustflag,
                 resume,
+                ipo_dates=ipo_dates,
             )
             if self._interrupted:
                 break
@@ -195,6 +208,7 @@ class KlineDownloader(BaseDownloader):
             start_date = get_kline_start_date("minute")
         table_name = f"all_stock_{frequency}min"
         total_rows = 0
+        ipo_dates = self.get_stock_ipo_dates()
         # BaoStock minute data only supports adjustflag=3 (no adjustment)
         adjustflags = get_nested_value(
             get_download_config(), ["kline", "minute", "adjustflags"], [3]
@@ -211,6 +225,7 @@ class KlineDownloader(BaseDownloader):
                 MINUTE_KLINE_FIELDS,
                 table_name,
                 adjustflag,
+                ipo_dates=ipo_dates,
             )
             self.logger.info(f"{frequency}min K-line (adj={adjustflag}): {count} rows")
             total_rows += count
