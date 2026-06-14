@@ -292,6 +292,13 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-06-14**：新增每日定时停止功能
+  - **定时退出机制**：当时间到达 23:55 时，自动保存数据并结束程序运行
+  - 新增 `DAILY_SHUTDOWN_TIME` 常量配置（`src/config.py`）
+  - 新增 `is_past_shutdown_time()` 函数，在 `ensure_login()` 中检查时间
+  - 到达停止时间时：设置 `_interrupted` 标志、刷写数据到数据库、保存断点
+  - 支持断点续传，下次运行可从停止处继续
+  - 修改文件：`src/config.py`、`src/downloaders/base.py`、`scripts/download_all.py`、`scripts/update_daily.py`
 - **2026-06-13**：优化下载性能，减少无效 API 请求
   - **缩短会话刷新间隔**：`LOGIN_REFRESH_INTERVAL` 从 1800 秒（30 分钟）降至 900 秒（15 分钟），减少 BaoStock 服务端会话过期导致的 "用户未登录" 错误和重试浪费
   - **K 线下载器添加 IPO 日期过滤**：每只股票从 IPO 日期开始拉取 K 线数据，避免新上市股票的 pre-IPO 空请求

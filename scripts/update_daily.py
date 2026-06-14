@@ -6,9 +6,10 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import DB_PATH
+from src.config import DB_PATH, DAILY_SHUTDOWN_TIME
 from src.db_manager import DBManager
 from src.utils.helpers import setup_logging
+from src.downloaders.base import is_past_shutdown_time
 from src.downloaders.meta_downloader import MetaDownloader
 from src.downloaders.component_downloader import ComponentDownloader
 from src.downloaders.index_downloader import IndexDownloader
@@ -78,6 +79,11 @@ def main():
             dl.download_index_weekly(start_date=index_start, end_date=kline_end_date)
             dl.download_index_monthly(start_date=index_start, end_date=kline_end_date)
 
+        if is_past_shutdown_time():
+            logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
+            db.close()
+            return
+
         logger.info("Updating stock K-line (daily/weekly/monthly)...")
         with KlineDownloader(str(DB_PATH), logger) as dl:
             # 日线：仅更新到最近交易日
@@ -127,6 +133,11 @@ def main():
                 logger.info(f"Skipping monthly K-line (latest: {latest_monthly.strftime('%Y-%m-%d')}, {len(trading_days_so_far)} trading days into month).")
     else:
         logger.info(f"No new trading data found on or before {target_date}. Skipping K-line update.")
+
+    if is_past_shutdown_time():
+        logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
+        db.close()
+        return
 
     current_year, current_quarter = get_current_quarter()
     logger.info(f"Updating financial data for {current_year} Q{current_quarter}...")

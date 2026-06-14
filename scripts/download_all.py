@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import DB_PATH
+from src.config import DB_PATH, DAILY_SHUTDOWN_TIME
 from src.config_loader import (
     load_config,
     get_financial_start_year,
@@ -18,6 +18,7 @@ from src.config_loader import (
 from src.db_manager import DBManager
 from src.utils.helpers import setup_logging
 from src.utils.validator import DataValidator
+from src.downloaders.base import is_past_shutdown_time
 from src.downloaders.meta_downloader import MetaDownloader
 from src.downloaders.macro_downloader import MacroDownloader
 from src.downloaders.component_downloader import ComponentDownloader
@@ -115,16 +116,28 @@ def main():
 
     codes = _get_stock_codes(DB_PATH, args.codes_file, logger)
 
+    if is_past_shutdown_time():
+        logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
+        return
+
     if not args.skip_macro and is_download_enabled("macro"):
         logger.info("Phase 4: Downloading macroeconomic data...")
         with MacroDownloader(str(DB_PATH), logger) as dl:
             macro_results = dl.download_all_macro()
         logger.info(f"Macro: {macro_results}")
 
+    if is_past_shutdown_time():
+        logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
+        return
+
     logger.info("Phase 5: Downloading index constituents...")
     with ComponentDownloader(str(DB_PATH), logger) as dl:
         comp_results = dl.download_all_components()
     logger.info(f"Components: {comp_results}")
+
+    if is_past_shutdown_time():
+        logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
+        return
 
     if kline_end_date:
         if is_download_enabled("index_kline"):
@@ -194,12 +207,20 @@ def main():
     else:
         logger.info("Skipping Phase 6-8 (K-line) due to no trading day found.")
 
+    if is_past_shutdown_time():
+        logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
+        return
+
     if not args.skip_financial and is_download_enabled("financial"):
         logger.info("Phase 9: Downloading financial data...")
         fin_year = args.financial_start_year or get_financial_start_year()
         with FinancialDownloader(str(DB_PATH), logger) as dl:
             fin_results = dl.download_all_financial(codes, start_year=fin_year)
         logger.info(f"Financial: {fin_results}")
+
+    if is_past_shutdown_time():
+        logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
+        return
 
     if not args.skip_reports and is_download_enabled("reports"):
         logger.info("Phase 10: Downloading company reports...")
@@ -210,6 +231,10 @@ def main():
                 end_date=args.end_date or (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"),
             )
         logger.info(f"Reports: {report_results}")
+
+    if is_past_shutdown_time():
+        logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
+        return
 
     if not args.skip_dividend and is_download_enabled("dividend"):
         logger.info("Phase 11: Downloading dividend and adjust factor...")

@@ -8,7 +8,13 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from src.config import DAILY_SHUTDOWN_TIME
 from src.config_loader import get_socket_timeout, get_daily_request_limit
+
+
+def is_past_shutdown_time() -> bool:
+    now = datetime.now().strftime("%H:%M")
+    return now >= DAILY_SHUTDOWN_TIME
 
 # API request log marker - used for statistical analysis
 API_LOG_MARKER = "[API_REQ]"
@@ -181,6 +187,17 @@ class BaseDownloader:
     def ensure_login(self):
         from src.config import LOGIN_REFRESH_INTERVAL
 
+        if is_past_shutdown_time():
+            self._interrupted = True
+            self._flush_pending_batches()
+            checkpoint_path = getattr(self, "_checkpoint_path", None)
+            if hasattr(self, "_checkpoint_data") and self._checkpoint_data and checkpoint_path:
+                self._save_checkpoint(checkpoint_path)
+            self.logger.warning(
+                f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，保存数据并退出。"
+            )
+            return
+
         if time.time() - self._login_time > LOGIN_REFRESH_INTERVAL:
             self.logger.info("Session expired, re-logging in...")
             self.logout()
@@ -280,15 +297,21 @@ class BaseDownloader:
                 wrapped.mark_error()
                 msg = rs.error_msg.lower()
                 if "session" in msg or "网络" in msg or "未登录" in msg:
+                    # 指数退避：3s, 6s, 12s... 避免快速 logout/login 循环
+                    relogin_wait = sleep_base * (2 ** attempt)
                     self.logger.warning(
-                        f"Session/login error, waiting 2s then re-logging in: {rs.error_msg}"
+                        f"Session/login error (attempt {attempt + 1}/{max_retries}), "
+                        f"re-logging in after {relogin_wait}s: {rs.error_msg}"
                     )
-                    time.sleep(2)
+                    time.sleep(relogin_wait)
                     try:
                         self.logout()
                     except Exception:
                         pass
                     self.login()
+                    # 登录后等待 5s，让服务端稳定会话
+                    self.logger.info("Waiting 5s after re-login for session to stabilize...")
+                    time.sleep(5)
                     continue
                 self.logger.warning(
                     f"Query failed (attempt {attempt + 1}): {rs.error_msg}"
