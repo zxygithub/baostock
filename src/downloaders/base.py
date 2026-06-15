@@ -285,6 +285,8 @@ class BaseDownloader:
         for attempt in range(max_retries):
             try:
                 self.ensure_login()
+                if self._interrupted:
+                    raise SystemExit(0)
                 rs = query_func(**kwargs)
                 # 无论成功失败都计数，因为服务器端已计数
                 self._increment_request_count()
