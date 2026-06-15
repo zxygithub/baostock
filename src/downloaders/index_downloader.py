@@ -30,6 +30,8 @@ class IndexDownloader(BaseDownloader):
         total_rows = 0
         batch_sleep = get_batch_sleep()
         for code in tqdm(codes, desc="Index daily"):
+            if self._interrupted:
+                break
             rs = self.query_with_retry(
                 bs.query_history_k_data_plus,
                 code=code,
@@ -62,6 +64,8 @@ class IndexDownloader(BaseDownloader):
         total_rows = 0
         batch_sleep = get_batch_sleep()
         for code in tqdm(codes, desc="Index weekly"):
+            if self._interrupted:
+                break
             rs = self.query_with_retry(
                 bs.query_history_k_data_plus,
                 code=code,
@@ -94,6 +98,8 @@ class IndexDownloader(BaseDownloader):
         total_rows = 0
         batch_sleep = get_batch_sleep()
         for code in tqdm(codes, desc="Index monthly"):
+            if self._interrupted:
+                break
             rs = self.query_with_retry(
                 bs.query_history_k_data_plus,
                 code=code,

@@ -62,6 +62,8 @@ class DividendDownloader(BaseDownloader):
         BATCH_SIZE = 50
 
         for code, year, year_type in tqdm(tasks, desc="Dividend"):
+            if self._interrupted:
+                break
             all_rows = []
             rs = self._api_call(
                 bs.query_dividend_data,
@@ -160,6 +162,8 @@ class DividendDownloader(BaseDownloader):
         total_rows = 0
         batch_sleep = get_batch_sleep()
         for code in tqdm(codes, desc="Adjust factor"):
+            if self._interrupted:
+                break
             rs = self._api_call(
                 bs.query_adjust_factor,
                 code=code, start_date=start_date, end_date=end_date,

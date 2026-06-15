@@ -85,6 +85,8 @@ class FinancialDownloader(BaseDownloader):
         BATCH_FLUSH = 500
 
         for code, year, quarter in tqdm(tasks, desc=table_name):
+            if self._interrupted:
+                break
             try:
                 rs = self.query_with_retry(
                     query_func, code=code, year=year, quarter=quarter

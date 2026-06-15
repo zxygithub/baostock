@@ -25,6 +25,8 @@ class ReportDownloader(BaseDownloader):
         batch_sleep = get_batch_sleep()
 
         for code in tqdm(codes, desc="Performance express"):
+            if self._interrupted:
+                break
             rs = self.query_with_retry(
                 bs.query_performance_express_report,
                 code=code,
@@ -61,6 +63,8 @@ class ReportDownloader(BaseDownloader):
         batch_sleep = get_batch_sleep()
 
         for code in tqdm(codes, desc="Forecast report"):
+            if self._interrupted:
+                break
             rs = self.query_with_retry(
                 bs.query_forecast_report,
                 code=code,
