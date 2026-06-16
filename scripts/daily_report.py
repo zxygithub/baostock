@@ -15,7 +15,7 @@ import smtplib
 import sqlite3
 import baostock as bs
 from pathlib import Path
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -91,10 +91,10 @@ def get_email_config(cfg):
 def get_db_stats():
     conn = sqlite3.connect(str(DB_PATH))
 
-    today = date.today().isoformat()
-    cursor = conn.execute("SELECT count FROM request_count WHERE date = ?", (today,))
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    cursor = conn.execute("SELECT count FROM request_count WHERE date = ?", (yesterday,))
     row = cursor.fetchone()
-    today_requests = row[0] if row else 0
+    yesterday_requests = row[0] if row else 0
 
     total_requests = conn.execute("SELECT COALESCE(SUM(count), 0) FROM request_count").fetchone()[0]
 
@@ -106,7 +106,7 @@ def get_db_stats():
         except:
             counts[t] = 0
 
-    return conn, today_requests, total_requests, counts
+    return conn, yesterday_requests, total_requests, counts
 
 # ---------------------------------------------------------------------------
 # Log Parsing
@@ -300,7 +300,10 @@ def get_api_request_estimates(conn, precise_est=None):
     meta_req = 4
 
     total = kline_req + fin_req + report_req + div_req + index_req + macro_req + meta_req
-    daily_limit = conn.execute("SELECT count FROM request_count WHERE date = date('now')").fetchone()
+    daily_limit = conn.execute(
+        "SELECT count FROM request_count WHERE date = ?",
+        ((date.today() - timedelta(days=1)).isoformat(),)
+    ).fetchone()
     today_count = daily_limit[0] if daily_limit else 0
 
     DAILY_REQUEST_LIMIT = 49000
@@ -552,13 +555,16 @@ def build_api_analysis_section(api_log):
 # ---------------------------------------------------------------------------
 # Email Generation & Sending
 # ---------------------------------------------------------------------------
-def build_email(sender, start_time, end_time, today_requests, total_requests,
-                blacklist_status, blacklist_detail, table_rows, api_req, api_analysis_html=""):
+def build_email(sender, start_time, end_time, yesterday_requests, total_requests,
+                blacklist_status, blacklist_detail, table_rows, api_req, api_analysis_html="",
+                report_date=None):
+    if report_date is None:
+        report_date = date.today() - timedelta(days=1)
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"BaoStock 数据下载日报 ({date.today().strftime('%Y-%m-%d')})"
+    msg["Subject"] = f"BaoStock 数据下载日报 ({report_date.strftime('%Y-%m-%d')})"
     msg["From"] = sender
 
-    pct_used = (today_requests / api_req["daily_limit"] * 100) if api_req["daily_limit"] else 0
+    pct_used = (yesterday_requests / api_req["daily_limit"] * 100) if api_req["daily_limit"] else 0
     est_days = api_req["days_remaining"]
 
     html = f"""
@@ -595,7 +601,7 @@ def build_email(sender, start_time, end_time, today_requests, total_requests,
             <div class="card">
                 <p><span class="card-label">⏱️ 最近一次拉取开始时间:</span> {start_time}</p>
                 <p><span class="card-label">⏱️ 最近一次拉取结束时间:</span> {end_time}</p>
-                <p><span class="card-label">📈 今日已使用请求次数:</span> {today_requests:,} 次 ({pct_used:.0f}%)</p>
+                <p><span class="card-label">📈 昨日已使用请求次数:</span> {yesterday_requests:,} 次 ({pct_used:.0f}%)</p>
                 <p><span class="card-label">📊 累计总请求次数:</span> {total_requests:,} 次</p>
                 <p><span class="card-label">🛡️ 黑名单状态:</span> <span class="{'status-ok' if '正常' in blacklist_status else 'status-error'}">{blacklist_status}</span> - {blacklist_detail}</p>
             </div>
@@ -673,16 +679,18 @@ def main():
     cfg = load_config()
     email_cfg = get_email_config(cfg)
 
-    conn, today_requests, total_requests, counts = get_db_stats()
+    conn, yesterday_requests, total_requests, counts = get_db_stats()
     start_time, end_time = get_latest_download_times()
     blacklist_status, blacklist_detail = check_blacklist_status()
     table_rows, api_req = get_progress_table(conn, counts)
     api_log = parse_api_request_log()
     api_analysis_html = build_api_analysis_section(api_log) if api_log else ""
 
+    report_date = date.today() - timedelta(days=1)
     msg = build_email(
-        email_cfg["sender"], start_time, end_time, today_requests, total_requests,
-        blacklist_status, blacklist_detail, table_rows, api_req, api_analysis_html
+        email_cfg["sender"], start_time, end_time, yesterday_requests, total_requests,
+        blacklist_status, blacklist_detail, table_rows, api_req, api_analysis_html,
+        report_date,
     )
     send_email(email_cfg, msg)
     conn.close()
