@@ -97,6 +97,33 @@ check_with_retry() {
     return 1  # DOWN
 }
 
+# ─── 检查今日请求是否已达上限 ───────────────────────────────────────────────
+check_daily_limit() {
+    local today count limit
+    today=$(date '+%Y-%m-%d')
+    limit=49000
+    
+    count=$("$PYTHON" -c "
+import sqlite3
+conn = sqlite3.connect('${DATA_DIR}/baostock.db')
+row = conn.execute('SELECT count FROM request_count WHERE date = ?', ('$today',)).fetchone()
+print(row[0] if row else 0)
+conn.close()
+" 2>/dev/null)
+    
+    if [ -z "$count" ]; then
+        count=0
+    fi
+    
+    if [ "$count" -ge "$limit" ]; then
+        log "WARN" "今日请求已达上限 ($count/$limit)，不再启动下载"
+        return 0  # true, 已达上限
+    fi
+    
+    log "INFO" "今日请求计数: $count/$limit"
+    return 1  # false, 未达上限
+}
+
 # ─── 检查下载进程 ───────────────────────────────────────────────────────────
 get_download_pid() {
     # 查找 download_all.py 或 update_daily.py 进程
@@ -199,18 +226,20 @@ main() {
             log "INFO" "检测到 .server_down 标记，服务器已恢复"
             record_event "server_up" "连通性恢复"
             
-            # 检查是否已有下载进程
             if ! get_download_pid > /dev/null; then
-                start_download
+                if ! check_daily_limit; then
+                    start_download
+                fi
             else
                 log "INFO" "下载进程已在运行，跳过启动"
                 rm -f "$SERVER_DOWN_FLAG"
             fi
         else
-            # 首次运行或正常运行中
             if ! get_download_pid > /dev/null; then
-                log "INFO" "无下载进程，启动下载服务"
-                start_download
+                if ! check_daily_limit; then
+                    log "INFO" "无下载进程，启动下载服务"
+                    start_download
+                fi
             else
                 log "INFO" "下载进程运行中，正常"
             fi
