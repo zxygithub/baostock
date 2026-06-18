@@ -553,11 +553,94 @@ def build_api_analysis_section(api_log):
     return html
 
 # ---------------------------------------------------------------------------
+# Monitor Events
+# ---------------------------------------------------------------------------
+def get_monitor_events():
+    """Read monitor events from monitor_events.json.
+    
+    Returns a dict with:
+      - date: report date
+      - events: list of {time, type, msg}
+      - server_down_count: number of server down events
+      - restart_count: number of restart events
+    """
+    events_file = PROJECT_ROOT / "data" / "monitor_events.json"
+    if not events_file.exists():
+        return None
+    
+    try:
+        import json
+        with open(events_file, encoding="utf-8") as f:
+            data = json.load(f)
+        return data
+    except Exception:
+        return None
+
+
+def build_monitor_section(monitor_data):
+    """Build HTML section for server connectivity monitoring."""
+    if monitor_data is None:
+        return ""
+    
+    events = monitor_data.get("events", [])
+    down_count = monitor_data.get("server_down_count", 0)
+    restart_count = monitor_data.get("restart_count", 0)
+    
+    # Event type icons
+    type_icons = {
+        "server_down": "❌",
+        "killed": "🛑",
+        "server_up": "✅",
+        "restarted": "🔄",
+    }
+    
+    # Build event timeline
+    timeline_html = ""
+    if events:
+        for event in events:
+            icon = type_icons.get(event["type"], "•")
+            timeline_html += f"""
+            <tr>
+                <td style="width:60px;">{event["time"]}</td>
+                <td style="width:30px;">{icon}</td>
+                <td>{event["msg"]}</td>
+            </tr>"""
+    else:
+        timeline_html = '<tr><td colspan="3" style="text-align:center;color:#95a5a6;">无事件记录</td></tr>'
+    
+    html = f"""
+    <h3>📡 服务器连通性监控</h3>
+    <table style="width:auto;margin-bottom:16px;">
+        <tr>
+            <td style="padding:6px 12px;background:#f8f9fa;"><strong>服务器中断次数:</strong></td>
+            <td style="padding:6px 12px;" class="{'status-error' if down_count > 0 else 'status-ok'}">{down_count}</td>
+            <td style="padding:6px 12px;background:#f8f9fa;"><strong>自动重启次数:</strong></td>
+            <td style="padding:6px 12px;" class="{'status-warn' if restart_count > 0 else 'status-ok'}">{restart_count}</td>
+        </tr>
+    </table>
+    
+    <p style="font-size:13px;margin-bottom:8px;"><strong>事件时间线:</strong></p>
+    <table style="width:100%;">
+        <thead>
+            <tr>
+                <th style="width:60px;">时间</th>
+                <th style="width:30px;"></th>
+                <th>事件</th>
+            </tr>
+        </thead>
+        <tbody>
+            {timeline_html}
+        </tbody>
+    </table>
+    """
+    return html
+
+# ---------------------------------------------------------------------------
 # Email Generation & Sending
 # ---------------------------------------------------------------------------
 def build_email(sender, start_time, end_time, yesterday_requests, total_requests,
                 blacklist_status, blacklist_detail, table_rows, api_req, api_analysis_html="",
-                report_date=None):
+                monitor_html="", report_date=None):
     if report_date is None:
         report_date = date.today() - timedelta(days=1)
     msg = MIMEMultipart("alternative")
@@ -640,6 +723,8 @@ def build_email(sender, start_time, end_time, yesterday_requests, total_requests
             预估总量基于每只股票的实际 IPO 日期和交易日历精确计算，非统一起始日期估算。
         </p>
 
+        {monitor_html}
+
         {api_analysis_html}
     </body>
     </html>
@@ -685,12 +770,16 @@ def main():
     table_rows, api_req = get_progress_table(conn, counts)
     api_log = parse_api_request_log()
     api_analysis_html = build_api_analysis_section(api_log) if api_log else ""
+    
+    # Monitor events
+    monitor_data = get_monitor_events()
+    monitor_html = build_monitor_section(monitor_data) if monitor_data else ""
 
     report_date = date.today() - timedelta(days=1)
     msg = build_email(
         email_cfg["sender"], start_time, end_time, yesterday_requests, total_requests,
         blacklist_status, blacklist_detail, table_rows, api_req, api_analysis_html,
-        report_date,
+        monitor_html, report_date,
     )
     send_email(email_cfg, msg)
     conn.close()

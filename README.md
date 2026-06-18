@@ -57,6 +57,7 @@ uv sync
 - **[执行流程](docs/执行流程.md)** - 详细的项目架构和执行流程说明
 - **[数据下载方案](docs/data_download_plan.md)** - 数据库设计和下载策略
 - **[数据拉取流程](docs/download_flow.md)** - 全量/增量下载详细流程图
+- **[服务器连通性监控](docs/monitor_design.md)** - 服务器监控方案设计
 - **[调度方案详细设计](docs/调度方案详细设计.md)** - 任务调度器架构与配置设计
 - **[改进计划](docs/improvement_plan.md)** - 已知问题和改进建议
 - **[优化方案](docs/optimization_plan.md)** - K 线优先、财务降级优化计划
@@ -84,6 +85,8 @@ baostock/
 │   ├── update_daily.py     # 增量更新
 │   ├── init_db.py          # 数据库初始化
 │   ├── daily_report.py     # 邮件日报
+│   ├── monitor_baostock.sh # 服务器连通性监控
+│   ├── kill_baostock.sh    # 进程终止脚本
 │   ├── check_blacklist.py  # 黑名单检测
 │   ├── analyze_latest_dates.py  # 最新日期分析
 │   └── estimate_data_volume.py  # 数据量估算
@@ -292,6 +295,16 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-06-18**：新增服务器连通性监控机制
+  - **自动监控**：每 10 分钟检测 BaoStock 服务器连通性（3 次确认，间隔 30 秒）
+  - **自动恢复**：服务器不可用时终止下载，恢复后自动重启 `./start.sh full`
+  - **事件记录**：记录服务器中断、进程终止、恢复、重启等事件
+  - **邮件展示**：日报邮件新增"服务器连通性监控"板块，展示事件时间线
+  - **关闭窗口**：23:55~00:05 期间监控脚本不干预，避免与定时停止/启动冲突
+  - 新增 `scripts/monitor_baostock.sh` 监控脚本
+  - 新增 `data/monitor_events.json` 事件记录文件
+  - 修改 `scripts/daily_report.py` 读取并展示监控事件
+  - Cron 变更：移除 0:05 固定启动，由监控脚本在 0:10 首次运行时启动
 - **2026-06-14**：新增每日定时停止功能
   - **定时退出机制**：当时间到达 23:55 时，自动保存数据并结束程序运行
   - 新增 `DAILY_SHUTDOWN_TIME` 常量配置（`src/config.py`）
