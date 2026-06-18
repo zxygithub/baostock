@@ -66,6 +66,7 @@ uv sync
 - **[代码审查](docs/code_review_2026-04-28.md)** - 全代码逻辑审查报告
 - **[API 请求日志分析](docs/api_request_log_analysis.md)** - 日志统计与异常排查指南
 - **[BaoStock API](docs/pythonAPI.md)** - BaoStock官方API文档
+- **[BaoStock复权因子简介](docs/BaoStock复权因子简介.pdf)** - 复权算法说明（PDF）
 
 ## 🗂️ 项目结构
 
@@ -222,6 +223,19 @@ from src.config_loader import (
 - **分红数据表**：除权除息、复权因子
 - **指数数据表**：成分股、指数 K 线
 - **宏观数据表**：利率、准备金率、货币供应量
+
+### 数据库表概览
+
+| 类别 | 表数量 | 主要表名 |
+|------|--------|----------|
+| 元数据 | 4 | `trade_dates`, `stock_basic`, `stock_industry`, `all_stock` |
+| K线数据 | 11 | `all_stock_daily`, `all_stock_weekly`, `all_stock_monthly`, `all_stock_*min` |
+| 财务数据 | 6 | `profit_data`, `operation_data`, `growth_data`, `balance_data`, `cash_flow_data`, `dupont_data` |
+| 公司报告 | 2 | `performance_express`, `forecast_report` |
+| 分红数据 | 2 | `dividend`, `adjust_factor` |
+| 指数数据 | 5 | `index_daily`, `index_weekly`, `index_monthly`, `sz50_stocks`, `hs300_stocks`, `zz500_stocks` |
+| 宏观数据 | 4 | `deposit_rate`, `loan_rate`, `reserve_ratio`, `money_supply_*` |
+| 系统表 | 1 | `request_count` |
 
 详细表结构见 [数据下载方案](docs/data_download_plan.md)。
 
