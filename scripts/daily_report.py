@@ -547,7 +547,7 @@ def build_api_analysis_section(api_log):
 
     <p style="font-size:13px;margin-top:12px;">
         <strong>空结果请求 (rows=0):</strong> {api_log["zero_rows"]} 次 
-        <span style="color:#7f8c8d;">(新股/停牌/退市)</span>
+        <span style="color:#7f8c8d;">(新股/停牌/退市/未完成周期)</span>
     </p>
     """
     return html

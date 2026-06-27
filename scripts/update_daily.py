@@ -108,12 +108,23 @@ def main():
             should_update_monthly = len(trading_days_so_far) <= 3
 
             if should_update_weekly:
-                weekly_start = (latest_weekly + timedelta(days=1)).strftime("%Y-%m-%d")
-                if target_date >= weekly_start:
-                    logger.info(f"Updating weekly K-line: {weekly_start} → {target_date}")
-                    dl.download_weekly_kline(codes, start_date=weekly_start, end_date=target_date)
+                # Week-completion guard: BaoStock only returns weekly data for completed
+                # calendar weeks (Mon-Fri). If the Friday of target_date's week hasn't
+                # arrived yet, the week is incomplete and all requests return rows=0.
+                friday_of_target_week = target_dt + timedelta(days=(4 - target_dt.weekday()))
+                if friday_of_target_week.date() > target_dt.date():
+                    logger.info(
+                        f"Skipping weekly K-line: target {target_date} "
+                        f"({target_dt.strftime('%A')}) is before the Friday of its week "
+                        f"({friday_of_target_week.strftime('%Y-%m-%d')}), week not yet complete."
+                    )
                 else:
-                    logger.info("Weekly K-line is up to date. Skipping.")
+                    weekly_start = (latest_weekly + timedelta(days=1)).strftime("%Y-%m-%d")
+                    if target_date >= weekly_start:
+                        logger.info(f"Updating weekly K-line: {weekly_start} → {target_date}")
+                        dl.download_weekly_kline(codes, start_date=weekly_start, end_date=target_date)
+                    else:
+                        logger.info("Weekly K-line is up to date. Skipping.")
             else:
                 logger.info(f"Skipping weekly K-line (latest: {latest_weekly.strftime('%Y-%m-%d')}, {(target_dt - latest_weekly).days}d < 7d).")
 

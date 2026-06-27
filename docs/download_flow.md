@@ -409,6 +409,17 @@ should_update_weekly = (target_dt - latest_weekly).days >= 7
 should_update_monthly = len(trading_days_in_month_so_far) <= 3
 ```
 
+**周线周完成守卫（week-completion guard）：**
+当周线下载触发后，还需检查 target_date 所在自然周是否已结束。BaoStock 的周线数据仅在完整交易周（Mon-Fri）结束后才返回，对未完成的周返回 rows=0。计算 target_date 所在周的周五，若周五尚未到达则跳过：
+
+```
+friday_of_target_week = target_dt + timedelta(days=(4 - target_dt.weekday()))
+if friday_of_target_week.date() > target_dt.date():
+    skip  # 周完成守卫：本周尚未结束，无完整新周可拉取
+```
+
+> 此守卫避免了 cron 在周五凌晨运行时（target=周四）对未完成当周发起的 ~16,600 次空请求。
+
 **月线同月守卫（same-month guard）：**
 当月线下载触发后，还需检查 `monthly_start`（latest_monthly + 1天）是否与 `latest_monthly` 处于同一自然月。若同月，说明该月数据已下载完毕且下月尚未结束，跳过下载：
 
@@ -677,4 +688,4 @@ for code, year, quarter in all_combinations:
 
 ---
 
-*文档最后更新：2026年5月16日*
+*文档最后更新：2026年6月27日*
