@@ -33,6 +33,14 @@ jobs:
           fi
           git fetch gitee
 
+      - name: Sync code excluding workflows
+        run: |
+          git checkout gitee/master
+          git checkout HEAD -- .github/workflows/ || true
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git diff --quiet || git commit -m "sync: from gitee (excluding workflow changes)"
+
       - name: Push to GitHub
         run: |
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/zxygithub/baostock.git gitee/master:master
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/zxygithub/baostock.git HEAD:master
