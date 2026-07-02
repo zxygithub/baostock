@@ -21,7 +21,12 @@ jobs:
           git remote set-url gitee https://gitee.com/superman75/baostock.git
 
       - name: Fetch from Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
+          if [ -n "$GITEE_TOKEN" ]; then
+            git remote set-url gitee https://oauth2:${GITEE_TOKEN}@gitee.com/superman75/baostock.git
+          fi
           git fetch gitee
 
       - name: Push to GitHub
