@@ -1,7 +1,7 @@
 """Unit tests for FinancialDownloader candidate generation skip logic.
 
-Tests the two new skip rules added to _download_quarterly_data:
-1. Skip current quarter (financial reports not yet published)
+Tests the skip rules added to _download_quarterly_data:
+1. Skip current quarter and previous quarter (reports still in publication window)
 2. Skip IPO year for growth_data (no YoY comparison available)
 """
 
@@ -76,8 +76,8 @@ def _count_candidates(conn, codes, start_year, end_year, table_name, current_yea
         for year in range(eff_start, eff_end + 1):
             quarters = [1, 2, 3, 4] if year < current_year else list(range(1, current_quarter + 1))
             for quarter in quarters:
-                # Skip current quarter
-                if year == current_year and quarter == current_quarter:
+                # Skip current quarter and previous quarter
+                if year == current_year and quarter in (current_quarter, current_quarter - 1):
                     continue
                 # Skip IPO year for growth_data
                 if table_name == "growth_data" and year == ipo_y:
@@ -102,15 +102,27 @@ class TestCurrentQuarterSkip:
 
         conn.close()
 
-    def test_q1_2026_included_when_current_is_q2(self, tmp_db_path):
-        """Q1 2026 should still be included when current quarter is Q2 2026."""
+    def test_q1_2026_skipped_when_current_is_q2(self, tmp_db_path):
+        """Q1 2026 should be skipped when current quarter is Q2 (previous quarter rule)."""
         conn = sqlite3.connect(tmp_db_path)
         _setup_stock_basic(conn, [("sh.600000", "2000-01-01", None)])
         codes = ["sh.600000"]
 
         candidates = _count_candidates(conn, codes, 2007, 2026, "profit_data", 2026, 2)
         q1_2026 = [c for c in candidates if c[1] == 2026 and c[2] == 1]
-        assert len(q1_2026) == 1
+        assert q1_2026 == [], "Q1 should be skipped as previous quarter when current is Q2"
+
+        conn.close()
+
+    def test_q1_2026_included_when_current_is_q3(self, tmp_db_path):
+        """Q1 2026 should be included when current quarter is Q3 (only Q3 and Q2 skipped)."""
+        conn = sqlite3.connect(tmp_db_path)
+        _setup_stock_basic(conn, [("sh.600000", "2000-01-01", None)])
+        codes = ["sh.600000"]
+
+        candidates = _count_candidates(conn, codes, 2007, 2026, "profit_data", 2026, 3)
+        q1_2026 = [c for c in candidates if c[1] == 2026 and c[2] == 1]
+        assert len(q1_2026) == 1, "Q1 should be included when current is Q3"
 
         conn.close()
 
@@ -190,8 +202,8 @@ class TestIPOYearSkipForGrowthData:
 
         candidates = _count_candidates(conn, codes, 2007, 2026, "growth_data", 2026, 2)
         # eff_start = 2026, current_quarter = 2
-        # Q1 2026: skipped by IPO year rule
-        # Q2 2026: skipped by current quarter rule
+        # Q1 2026: skipped by previous-quarter rule and IPO year rule
+        # Q2 2026: skipped by current-quarter rule
         # Result: no candidates
         assert candidates == []
 

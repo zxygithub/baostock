@@ -59,8 +59,10 @@ class FinancialDownloader(BaseDownloader):
                         else list(range(1, current_quarter + 1))
                     )
                 for quarter in quarters:
-                    # Skip current quarter: financial reports are not yet published
-                    if year == current_year and quarter == current_quarter:
+                    # Skip current quarter and previous quarter: financial reports
+                    # may still be in their publication window
+                    # (Q1 by Apr 30, Q2 by Aug 31, Q3 by Oct 31, Q4 by Apr 30).
+                    if year == current_year and quarter in (current_quarter, current_quarter - 1):
                         continue
                     # Skip IPO year for growth_data: no YoY comparison available
                     if table_name == "growth_data" and year == ipo_y:

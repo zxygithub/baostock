@@ -309,6 +309,10 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-07-03**：修复财务数据下载器查询未发布季度导致 ~27K 次空请求
+  - **问题根因**：财务数据下载器仅跳过当前季度，未考虑上一季度的财务报告仍在发布窗口期（Q2 中报截止 8/31、Q3 截止 10/31 等）。7 月初运行时，Q2 数据大部分公司尚未发布，BaoStock API 返回 rows=0，导致 6 个财务表 × ~4,500 只股票 = ~27,000 次空请求
+  - **修复方案**：在跳过当前季度的基础上，增加跳过上一季度的逻辑（`quarter in (current_quarter, current_quarter - 1)`），避免查询尚在发布窗口期的财务报告
+  - 修改文件：`src/downloaders/financial_downloader.py`、`tests/test_financial_skip_logic.py`
 - **2026-06-27**：修复周线 K 线未完成周重复下载导致 ~16K 次空请求
   - **问题根因**：周线下载仅用 7 天间隔判断是否触发，未检查 target_date 所在自然周是否已结束。当 cron 在周五凌晨运行（target=周四），请求范围覆盖未完成的当周，BaoStock 对不完整周返回 rows=0，导致 5534 股票 × 3 复权 = 16,602 次空请求
   - **修复方案**：在 `should_update_weekly` 通过后增加**周完成守卫**（week-completion guard），计算 target_date 所在自然周的周五，若周五尚未到达则跳过下载
