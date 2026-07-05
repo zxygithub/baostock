@@ -12,6 +12,15 @@ from src.utils.helpers import fetch_all_rows
 
 
 class ReportDownloader(BaseDownloader):
+    def _get_recently_queried_codes(self, table: str, days: int = 7) -> set[str]:
+        try:
+            rows = self.conn.execute(
+                f"SELECT code FROM {table} WHERE update_time > datetime('now', '-{days} days')"
+            ).fetchall()
+            return {row[0] for row in rows}
+        except Exception:
+            return set()
+
     def download_performance_express(
         self,
         codes: list[str],
@@ -23,10 +32,18 @@ class ReportDownloader(BaseDownloader):
 
         total_rows = 0
         batch_sleep = get_batch_sleep()
+        
+        recently_queried = self._get_recently_queried_codes("performance_express", days=7)
+        if recently_queried:
+            self.logger.info(
+                f"performance_express: skipping {len(recently_queried)} codes queried in last 7 days"
+            )
 
         for code in tqdm(codes, desc="Performance express"):
             if self._interrupted:
                 break
+            if code in recently_queried:
+                continue
             rs = self.query_with_retry(
                 bs.query_performance_express_report,
                 code=code,
@@ -62,9 +79,17 @@ class ReportDownloader(BaseDownloader):
         total_rows = 0
         batch_sleep = get_batch_sleep()
 
+        recently_queried = self._get_recently_queried_codes("forecast_report", days=7)
+        if recently_queried:
+            self.logger.info(
+                f"forecast_report: skipping {len(recently_queried)} codes queried in last 7 days"
+            )
+
         for code in tqdm(codes, desc="Forecast report"):
             if self._interrupted:
                 break
+            if code in recently_queried:
+                continue
             rs = self.query_with_retry(
                 bs.query_forecast_report,
                 code=code,
