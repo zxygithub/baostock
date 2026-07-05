@@ -19,7 +19,21 @@ from src.config_loader import get_financial_start_year
 from src.utils.helpers import fetch_all_rows, get_current_quarter
 
 
+QUARTER_PERIOD_END = {
+    1: (3, 31),
+    2: (6, 30),
+    3: (9, 30),
+    4: (12, 31),
+}
+
+
 class FinancialDownloader(BaseDownloader):
+    def get_stock_out_dates(self) -> dict[str, str | None]:
+        rows = self.conn.execute(
+            "SELECT code, out_date FROM stock_basic"
+        ).fetchall()
+        return {row[0]: row[1] for row in rows}
+
     def _download_quarterly_data(
         self,
         codes: list[str],
@@ -37,6 +51,7 @@ class FinancialDownloader(BaseDownloader):
             end_year = get_current_quarter()[0]
 
         stock_years = self.get_stock_years(codes, start_year, end_year)
+        stock_out_dates = self.get_stock_out_dates()
         total_rows = 0
         current_year, current_quarter = get_current_quarter()
         recent_years = {current_year, current_year - 1}
@@ -49,6 +64,8 @@ class FinancialDownloader(BaseDownloader):
             if eff_start > eff_end:
                 continue
 
+            out_date_str = stock_out_dates.get(code)
+
             for year in range(eff_start, eff_end + 1):
                 if start_quarter is not None and end_quarter is not None and start_year == end_year:
                     quarters = list(range(start_quarter, end_quarter + 1))
@@ -59,14 +76,15 @@ class FinancialDownloader(BaseDownloader):
                         else list(range(1, current_quarter + 1))
                     )
                 for quarter in quarters:
-                    # Skip current quarter and previous quarter: financial reports
-                    # may still be in their publication window
-                    # (Q1 by Apr 30, Q2 by Aug 31, Q3 by Oct 31, Q4 by Apr 30).
                     if year == current_year and quarter in (current_quarter, current_quarter - 1):
                         continue
-                    # Skip IPO year for growth_data: no YoY comparison available
                     if table_name == "growth_data" and year == ipo_y:
                         continue
+                    if out_date_str and out_date_str[:4].isdigit():
+                        m, d = QUARTER_PERIOD_END[quarter]
+                        period_end = f"{year}-{m:02d}-{d:02d}"
+                        if out_date_str < period_end:
+                            continue
                     candidates.append((code, year, quarter))
 
         tasks, skipped = self._find_missing_quarters(table_name, candidates)
