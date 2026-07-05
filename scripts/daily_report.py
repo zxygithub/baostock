@@ -368,68 +368,93 @@ def get_progress_table(conn, counts):
 # ---------------------------------------------------------------------------
 # API Request Log Analysis
 # ---------------------------------------------------------------------------
-def parse_api_request_log():
-    """Parse [API_REQ] log entries from the latest download session.
+def parse_api_request_log(target_date=None):
+    """Parse [API_REQ] log entries from all download sessions for a specific date.
+    
+    Args:
+        target_date: Date string in YYYYMMDD format (e.g., "20260704").
+                     Defaults to yesterday if not specified.
     
     Returns a dict with:
       - rows: list of (phase, api_func, requests, total_rows, avg) tuples
       - total_requests, total_rows
       - kline_breakdown: dict with frequency/adjustflag stats
       - zero_row_count, status
+      - log_files: list of parsed log file names
+      - session_count: number of download sessions parsed
     """
     if not LOG_DIR.exists():
         return None
 
-    logs = sorted([f for f in LOG_DIR.glob("*.log") if re.match(r"2\d{7}_\d{6}\.log", f.name)])
+    # Default to yesterday if no date specified
+    if target_date is None:
+        target_date = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+
+    # Find all log files for the target date (pattern: YYYYMMDD_HHMMSS.log)
+    date_pattern = f"{target_date}_*.log"
+    logs = sorted(LOG_DIR.glob(date_pattern))
+    
     if not logs:
         return None
 
-    latest_log = logs[-1]
-    content = latest_log.read_text(encoding="utf-8")
-
-    api_lines = [line for line in content.split("\n") if "[API_REQ]" in line]
-    if not api_lines:
-        return None
-
-    # Parse each line
+    # Aggregate data from all log files for this date
     func_stats = {}
     kline_by_freq = {}
     zero_rows = 0
     total_req = 0
     total_rows = 0
+    has_failed = False
+    has_done = False
+    log_file_names = []
 
-    for line in api_lines:
-        # Extract function name and rows
-        m = re.search(r'\[API_REQ\]\s+(\S+)\s+\|.*\|\s+rows=(\d+)', line)
-        if not m:
-            continue
-        func = m.group(1)
-        rows = int(m.group(2))
+    for log_file in logs:
+        log_file_names.append(log_file.name)
+        content = log_file.read_text(encoding="utf-8")
+        
+        # Track overall status
+        if "FAILED" in content:
+            has_failed = True
+        if "DONE" in content:
+            has_done = True
+        
+        # Parse API request lines
+        api_lines = [line for line in content.split("\n") if "[API_REQ]" in line]
+        
+        for line in api_lines:
+            # Extract function name and rows
+            m = re.search(r'\[API_REQ\]\s+(\S+)\s+\|.*\|\s+rows=(\d+)', line)
+            if not m:
+                continue
+            func = m.group(1)
+            rows = int(m.group(2))
 
-        func_stats.setdefault(func, {"requests": 0, "total_rows": 0})
-        func_stats[func]["requests"] += 1
-        func_stats[func]["total_rows"] += rows
-        total_req += 1
-        total_rows += rows
-        if rows == 0:
-            zero_rows += 1
+            func_stats.setdefault(func, {"requests": 0, "total_rows": 0})
+            func_stats[func]["requests"] += 1
+            func_stats[func]["total_rows"] += rows
+            total_req += 1
+            total_rows += rows
+            if rows == 0:
+                zero_rows += 1
 
-        # Track K-line frequency breakdown
-        if func == "query_history_k_data_plus":
-            freq_m = re.search(r'frequency=(\w+)', line)
-            adj_m = re.search(r'adjustflag=(\d+)', line)
-            if freq_m:
-                freq = freq_m.group(1)
-                kline_by_freq.setdefault(freq, {"requests": 0, "total_rows": 0})
-                kline_by_freq[freq]["requests"] += 1
-                kline_by_freq[freq]["total_rows"] += rows
+            # Track K-line frequency breakdown
+            if func == "query_history_k_data_plus":
+                freq_m = re.search(r'frequency=(\w+)', line)
+                if freq_m:
+                    freq = freq_m.group(1)
+                    kline_by_freq.setdefault(freq, {"requests": 0, "total_rows": 0})
+                    kline_by_freq[freq]["requests"] += 1
+                    kline_by_freq[freq]["total_rows"] += rows
 
-    # Check if download completed or failed
-    status = "✅ 完成"
-    if "FAILED" in content:
-        status = "❌ 中断 (API 上限)"
-    elif "DONE" not in content:
-        status = "⚠️ 未知"
+    if total_req == 0:
+        return None
+
+    # Determine overall status
+    if has_failed:
+        status = "❌ 部分中断"
+    elif has_done:
+        status = "✅ 完成"
+    else:
+        status = "⚠️ 进行中"
 
     # Build phase summary
     phase_map = {
@@ -470,7 +495,8 @@ def parse_api_request_log():
         "kline_by_freq": kline_by_freq,
         "zero_rows": zero_rows,
         "status": status,
-        "log_file": latest_log.name,
+        "log_files": log_file_names,
+        "session_count": len(logs),
     }
 
 
@@ -505,9 +531,17 @@ def build_api_analysis_section(api_log):
             <td class="num">{avg:.1f}</td>
         </tr>"""
 
+    # Format log files info
+    log_files = api_log.get("log_files", [])
+    session_count = api_log.get("session_count", 1)
+    if len(log_files) <= 3:
+        log_files_str = ", ".join(log_files)
+    else:
+        log_files_str = f"{log_files[0]} ... {log_files[-1]} (共 {len(log_files)} 个)"
+
     html = f"""
     <h3>📋 凌晨下载 API 请求分析</h3>
-    <p style="font-size:12px;color:#7f8c8d;">日志来源: {api_log["log_file"]} | 状态: {api_log["status"]}</p>
+    <p style="font-size:12px;color:#7f8c8d;">日志来源: {log_files_str} | 下载会话数: {session_count} | 状态: {api_log["status"]}</p>
     
     <table>
         <thead>
@@ -776,6 +810,11 @@ def main():
     monitor_html = build_monitor_section(monitor_data) if monitor_data else ""
 
     report_date = date.today() - timedelta(days=1)
+    # Parse API request logs for the report date (yesterday)
+    report_date_str = report_date.strftime("%Y%m%d")
+    api_log = parse_api_request_log(target_date=report_date_str)
+    api_analysis_html = build_api_analysis_section(api_log) if api_log else ""
+    
     msg = build_email(
         email_cfg["sender"], start_time, end_time, yesterday_requests, total_requests,
         blacklist_status, blacklist_detail, table_rows, api_req, api_analysis_html,
