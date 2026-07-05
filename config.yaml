@@ -75,7 +75,7 @@ download:
 stocks:
   filter: "type=1 AND status=1"  # SQL filter for stock selection
   batch_size: 200  # stocks per batch for downloads
-  batch_sleep: 2  # seconds to sleep between batches
+  batch_sleep: 1  # seconds to sleep between batches
 
 # ---------------------------------------------------------------------------
 # Email reporting (for daily_report.py)

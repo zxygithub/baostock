@@ -19,8 +19,8 @@ DB_PATH: Path = Path(__file__).parent.parent / "data" / "baostock.db"
 # Internal timing settings (not user-configurable)
 # ---------------------------------------------------------------------------
 
-FINANCIAL_SLEEP: float = 0.5  # seconds between financial API calls
-LOGIN_REFRESH_INTERVAL: int = 900  # seconds (15 min) before re-login
+FINANCIAL_SLEEP: float = 0.25  # seconds between financial API calls
+LOGIN_REFRESH_INTERVAL: int = 540  # seconds (9 min) before re-login
 MAX_RETRIES: int = 3  # maximum number of retry attempts
 DAILY_SHUTDOWN_TIME: str = "23:55"  # HH:MM - save data and exit when reached
 
