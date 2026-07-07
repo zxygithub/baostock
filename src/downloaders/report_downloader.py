@@ -44,13 +44,17 @@ class ReportDownloader(BaseDownloader):
                 break
             if code in recently_queried:
                 continue
-            rs = self.query_with_retry(
-                bs.query_performance_express_report,
-                code=code,
-                start_date=start_date,
-                end_date=end_date,
-            )
-            rows = fetch_all_rows(rs)
+            try:
+                rs = self.query_with_retry(
+                    bs.query_performance_express_report,
+                    code=code,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                rows = fetch_all_rows(rs)
+            except RuntimeError as e:
+                self.logger.warning(f"performance_express: skipping {code} after retries: {e}")
+                continue
             if not rows:
                 df = pd.DataFrame(
                     [[code, '9999-01-01']],
@@ -90,13 +94,17 @@ class ReportDownloader(BaseDownloader):
                 break
             if code in recently_queried:
                 continue
-            rs = self.query_with_retry(
-                bs.query_forecast_report,
-                code=code,
-                start_date=start_date,
-                end_date=end_date,
-            )
-            rows = fetch_all_rows(rs)
+            try:
+                rs = self.query_with_retry(
+                    bs.query_forecast_report,
+                    code=code,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                rows = fetch_all_rows(rs)
+            except RuntimeError as e:
+                self.logger.warning(f"forecast_report: skipping {code} after retries: {e}")
+                continue
             if not rows:
                 df = pd.DataFrame(
                     [[code, '9999-01-01']],
