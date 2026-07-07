@@ -165,7 +165,7 @@ download:
 stocks:
   filter: "type=1 AND status=1"  # 股票筛选条件（SQL WHERE 子句）
   batch_size: 200                # 每批处理的股票数量
-  batch_sleep: 2                 # 批次间休眠时间（秒）
+  batch_sleep: 1                 # 批次间休眠时间（秒）
 
 # 邮件日报开关（敏感凭据在 .env 中配置）
 email:
@@ -309,6 +309,14 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-07-08**：修复公司报告下载器崩溃问题 + 性能优化
+  - **问题根因**：BaoStock 服务端返回的 `sh.600217` (南京高科) 业绩预告数据包含未转义的中文引号（`"非典"`），导致 JSON 解析失败。`query_forecast_report` 未捕获 `RuntimeError`，3 次重试后抛出异常导致整个下载进程崩溃。监控脚本每 10 分钟重启，形成 13 次连续崩溃循环，浪费约 14,000 次 API 请求
+  - **修复方案**：在 `download_performance_express` 和 `download_forecast_report` 方法中捕获 `RuntimeError`，单只股票查询失败时跳过并记录警告，不再让整个进程崩溃
+  - **性能优化**：缩短下载休眠参数，提升下载速度
+    - `FINANCIAL_SLEEP`: 0.5s → 0.25s（财务数据下载提速 ~50%）
+    - `LOGIN_REFRESH_INTERVAL`: 900s → 540s（主动刷新，避免被动断线浪费 7s）
+    - `batch_sleep`: 2s → 1s（批次间休眠减半）
+  - 修改文件：`src/downloaders/report_downloader.py`、`src/config.py`、`config.yaml`
 - **2026-07-06**：优化下载器减少无效 API 请求
   - **财务数据下载器添加退市日期过滤**：通过查询 `stock_basic` 表的退市日期，跳过已退市股票在退市后的无效季度查询。新增 `get_stock_out_dates()` 方法和 `QUARTER_PERIOD_END` 常量，根据退市日期与季度截止日期比较，避免查询不可能存在的历史财务数据
   - **公司报告下载器添加 7 天负缓存机制**：新增 `_get_recently_queried_codes()` 方法，查询最近 7 天内已查询过的股票代码并跳过，减少业绩预告和业绩快报的重复查询。适用于增量更新场景，避免短期内重复拉取相同数据
@@ -422,6 +430,6 @@ A: 可以使用 `./clean_data.sh` 清理不需要的历史数据。
 A: 使用 `./start.sh status` 查看数据库状态，或查看日志文件。
 
 ---
-*最后更新：2026 年 7 月 5 日*
+*最后更新：2026 年 7 月 8 日*
 
 <!-- 测试 Gitee → GitHub 镜像同步 -->
