@@ -309,6 +309,10 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-07-13**：修复分红数据表 PRIMARY KEY 冲突导致 ~15K 次空请求
+  - **问题根因**：`dividend` 表主键为 `(code, divid_operate_date, year_type)`，不含 `year`。占位记录统一使用 `divid_operate_date = '9999-01-01'`，导致同一 `(code, year_type)` 下不同年份的占位互相覆盖。`_find_missing_dividend` 的 LEFT JOIN 按 `(code, year, year_type)` 匹配，只能匹配到最后写入的那一年，其他年份被判定为"缺失"→ 重复查询 → rows=0。每只股票约 18 年 × 2 year_type = 36 次空请求，5,200 只股票 × 3 = ~15,000 次
+  - **修复方案**：将 `dividend` 表 PRIMARY KEY 改为 `(code, divid_operate_date, year, year_type)`，使每个 `(code, year, year_type)` 组合可独立存储占位记录。迁移逻辑直接删除旧表重建空表（旧占位数据已因覆盖丢失，无法恢复）
+  - 修改文件：`src/db_manager.py`
 - **2026-07-08**：修复公司报告下载器崩溃问题 + 性能优化
   - **问题根因**：BaoStock 服务端返回的 `sh.600217` (南京高科) 业绩预告数据包含未转义的中文引号（`"非典"`），导致 JSON 解析失败。`query_forecast_report` 未捕获 `RuntimeError`，3 次重试后抛出异常导致整个下载进程崩溃。监控脚本每 10 分钟重启，形成 13 次连续崩溃循环，浪费约 14,000 次 API 请求
   - **修复方案**：在 `download_performance_express` 和 `download_forecast_report` 方法中捕获 `RuntimeError`，单只股票查询失败时跳过并记录警告，不再让整个进程崩溃
@@ -430,6 +434,6 @@ A: 可以使用 `./clean_data.sh` 清理不需要的历史数据。
 A: 使用 `./start.sh status` 查看数据库状态，或查看日志文件。
 
 ---
-*最后更新：2026 年 7 月 8 日*
+*最后更新：2026 年 7 月 13 日*
 
 <!-- 测试 Gitee → GitHub 镜像同步 -->

@@ -359,7 +359,7 @@ class DBManager:
                 year                     INTEGER,         -- 年份
                 year_type                TEXT,            -- 年份类别 (report:预案公告年份, operate:除权除息年份)
                 update_time              TEXT,            -- 数据下载时间 (格式:YYYY-MM-DD HH:MM:SS)
-                PRIMARY KEY (code, divid_operate_date, year_type)
+                PRIMARY KEY (code, divid_operate_date, year, year_type)
             )
         """)
 
@@ -727,7 +727,7 @@ class DBManager:
                 pk_sql = conn.execute(
                     "SELECT sql FROM sqlite_master WHERE name='dividend'"
                 ).fetchone()
-                if pk_sql and "year_type" not in pk_sql[0].split("PRIMARY KEY")[1]:
+                if pk_sql and " year," not in pk_sql[0].split("PRIMARY KEY")[1]:
                     self._migrate_dividend_pk(conn)
 
         if "money_supply_year" in tables:
@@ -780,13 +780,13 @@ class DBManager:
                 )
 
     def _migrate_dividend_pk(self, conn: sqlite3.Connection) -> None:
-        conn.execute("ALTER TABLE dividend RENAME TO dividend_old")
+        """Recreate dividend table with year added to PRIMARY KEY.
+
+        Old data is discarded — placeholder records had PK collisions that
+        caused silent data loss, so a clean rebuild is safer than migrating.
+        """
+        conn.execute("DROP TABLE IF EXISTS dividend")
         self._create_dividend(conn)
-        conn.execute("""
-            INSERT OR IGNORE INTO dividend
-            SELECT * FROM dividend_old
-        """)
-        conn.execute("DROP TABLE dividend_old")
 
     def _migrate_money_supply_year(self, conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE money_supply_year RENAME TO money_supply_year_old")
