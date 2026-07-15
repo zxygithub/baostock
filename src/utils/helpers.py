@@ -85,18 +85,23 @@ def convert_turn_field(value: str) -> float:
     return float(value)
 
 
-def fetch_all_rows(result_set) -> list[list]:
+def fetch_all_rows(result_set, max_rows: int = 100000) -> list[list]:
     """Iterate through a BaoStock result set and collect all rows.
 
     Args:
         result_set: A BaoStock query result object with error_code, next(), and get_row_data().
+        max_rows: Maximum number of rows to fetch (safety limit to prevent infinite loops).
 
     Returns:
         List of row data lists.
     """
     data_list: list[list] = []
+    count = 0
     while result_set.error_code == "0" and result_set.next():
         data_list.append(result_set.get_row_data())
+        count += 1
+        if count > max_rows:
+            break
     return data_list
 
 

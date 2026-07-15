@@ -309,6 +309,12 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-07-15**：修复分红数据下载器死循环问题
+  - **问题根因**：分红下载器使用 `_api_call()` 而非 `query_with_retry()`，当 BaoStock 会话过期时无法自动重登录，导致 `fetch_all_rows()` 陷入死循环（CPU 100%，32 分钟无进展）
+  - **修复方案**：
+    - 分红下载器改用 `query_with_retry()`，获得会话错误检测和自动重登录能力（最多 3 次重试，指数退避）
+    - `fetch_all_rows()` 添加 `max_rows` 安全限制（默认 100,000 行），防止任何情况下无限循环
+  - 修改文件：`src/downloaders/dividend_downloader.py`、`src/utils/helpers.py`
 - **2026-07-13**：修复分红数据表 PRIMARY KEY 冲突导致 ~15K 次空请求
   - **问题根因**：`dividend` 表主键为 `(code, divid_operate_date, year_type)`，不含 `year`。占位记录统一使用 `divid_operate_date = '9999-01-01'`，导致同一 `(code, year_type)` 下不同年份的占位互相覆盖。`_find_missing_dividend` 的 LEFT JOIN 按 `(code, year, year_type)` 匹配，只能匹配到最后写入的那一年，其他年份被判定为"缺失"→ 重复查询 → rows=0。每只股票约 18 年 × 2 year_type = 36 次空请求，5,200 只股票 × 3 = ~15,000 次
   - **修复方案**：将 `dividend` 表 PRIMARY KEY 改为 `(code, divid_operate_date, year, year_type)`，使每个 `(code, year, year_type)` 组合可独立存储占位记录。迁移逻辑直接删除旧表重建空表（旧占位数据已因覆盖丢失，无法恢复）
@@ -434,6 +440,6 @@ A: 可以使用 `./clean_data.sh` 清理不需要的历史数据。
 A: 使用 `./start.sh status` 查看数据库状态，或查看日志文件。
 
 ---
-*最后更新：2026 年 7 月 13 日*
+*最后更新：2026 年 7 月 15 日*
 
 <!-- 测试 Gitee → GitHub 镜像同步 -->

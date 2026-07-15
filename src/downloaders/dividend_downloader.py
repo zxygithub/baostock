@@ -65,11 +65,16 @@ class DividendDownloader(BaseDownloader):
             if self._interrupted:
                 break
             all_rows = []
-            rs = self._api_call(
-                bs.query_dividend_data,
-                code=code, year=str(year), yearType=year_type,
-            )
-            rows = fetch_all_rows(rs)
+            try:
+                rs = self.query_with_retry(
+                    bs.query_dividend_data,
+                    code=code, year=str(year), yearType=year_type,
+                )
+                rows = fetch_all_rows(rs)
+            except RuntimeError as e:
+                self.logger.warning(f"dividend: skipping {code} {year} {year_type} after retries: {e}")
+                time.sleep(batch_sleep)
+                continue
             for row in rows:
                 all_rows.append(list(row) + [year, year_type])
 
