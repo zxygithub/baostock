@@ -152,6 +152,77 @@ kill_download_process() {
     return 0
 }
 
+# ─── 检查下载进程活跃度 ─────────────────────────────────────────────────────
+# 参数: $1=进程PID, $2=日志文件路径, $3=超时分钟数(默认15)
+# 返回: 0=活跃, 1=卡死或无进程
+check_process_activity() {
+    local pid="$1"
+    local log_file="$2"
+    local timeout_minutes="${3:-15}"
+    
+    # 如果没有进程，认为不活跃
+    if [ -z "$pid" ]; then
+        return 1
+    fi
+    
+    # 如果没有日志文件，认为不活跃
+    if [ ! -f "$log_file" ]; then
+        return 1
+    fi
+    
+    # 检查日志最后修改时间
+    local now last_modified age_seconds timeout_seconds
+    now=$(date +%s)
+    last_modified=$(stat -c %Y "$log_file" 2>/dev/null)
+    
+    if [ -z "$last_modified" ]; then
+        return 1
+    fi
+    
+    age_seconds=$((now - last_modified))
+    timeout_seconds=$((timeout_minutes * 60))
+    
+    if [ "$age_seconds" -gt "$timeout_seconds" ]; then
+        log "WARN" "日志文件 ${age_seconds}s 未更新（阈值 ${timeout_seconds}s），进程可能卡死"
+        return 1  # 卡死
+    fi
+    
+    return 0  # 活跃
+}
+
+# ─── 优雅终止下载进程 ───────────────────────────────────────────────────────
+# 先发送 SIGINT 让它保存 checkpoint，等待最多 N 秒，然后强制 kill
+# 参数: $1=进程PID, $2=等待秒数(默认10)
+graceful_kill_download() {
+    local pid="$1"
+    local wait_seconds="${2:-10}"
+    
+    if [ -z "$pid" ]; then
+        return 1
+    fi
+    
+    log "INFO" "发送 SIGINT 给 PID=$pid，等待保存 checkpoint..."
+    kill -INT "$pid" 2>/dev/null
+    
+    # 等待进程退出
+    local i
+    for i in $(seq 1 "$wait_seconds"); do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            log "INFO" "进程 PID=$pid 已优雅退出"
+            record_event "graceful_killed" "PID $pid 已保存 checkpoint 并退出"
+            return 0
+        fi
+        sleep 1
+    done
+    
+    # 强制终止
+    log "WARN" "进程 PID=$pid 未响应 SIGINT，强制终止"
+    kill -9 "$pid" 2>/dev/null
+    sleep 1
+    record_event "force_killed" "PID $pid 被强制终止"
+    return 0
+}
+
 # ─── 启动下载服务 ───────────────────────────────────────────────────────────
 start_download() {
     log "INFO" "启动下载服务: ./start.sh full"
@@ -221,27 +292,41 @@ main() {
         # 服务器 UP
         log "INFO" "服务器连通"
         
-        # 检查是否有 .server_down 标记
-        if [ -f "$SERVER_DOWN_FLAG" ]; then
-            log "INFO" "检测到 .server_down 标记，服务器已恢复"
-            record_event "server_up" "连通性恢复"
-            
-            if ! get_download_pid > /dev/null; then
-                if ! check_daily_limit; then
-                    start_download
-                fi
-            else
-                log "INFO" "下载进程已在运行，跳过启动"
-                rm -f "$SERVER_DOWN_FLAG"
+        # 先检查是否达到请求上限
+        if check_daily_limit; then
+            log "WARN" "今日请求已达上限，不启动/不重启下载"
+            exit 0
+        fi
+        
+        # 检查是否有下载进程
+        local pid
+        pid=$(get_download_pid)
+        
+        if [ -z "$pid" ]; then
+            # 无进程，启动下载
+            if [ -f "$SERVER_DOWN_FLAG" ]; then
+                log "INFO" "检测到 .server_down 标记，服务器已恢复"
+                record_event "server_up" "连通性恢复"
             fi
+            log "INFO" "无下载进程，启动下载服务"
+            start_download
         else
-            if ! get_download_pid > /dev/null; then
-                if ! check_daily_limit; then
-                    log "INFO" "无下载进程，启动下载服务"
-                    start_download
+            # 有进程，检查活跃度
+            local latest_log
+            latest_log=$(find "$LOG_DIR" -name "*.log" -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+            
+            if check_process_activity "$pid" "$latest_log" 15; then
+                log "INFO" "下载进程运行中，正常"
+                # 如果有服务器下线标记，清除它
+                if [ -f "$SERVER_DOWN_FLAG" ]; then
+                    rm -f "$SERVER_DOWN_FLAG"
                 fi
             else
-                log "INFO" "下载进程运行中，正常"
+                # 进程卡死，优雅终止并重启
+                log "WARN" "下载进程卡死，准备重启"
+                graceful_kill_download "$pid" 10
+                sleep 2
+                start_download
             fi
         fi
     else

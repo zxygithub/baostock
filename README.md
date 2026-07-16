@@ -313,6 +313,13 @@ stocks:
   - **问题根因**：2026-07-15 修复分红下载器死循环时，遗漏了同一文件中的 `download_adjust_factor()` 方法。该方法仍使用 `_api_call()` 而非 `query_with_retry()`，当 BaoStock 会话过期时同样会陷入死循环（CPU 空转、网络 I/O 冻结、无日志输出）
   - **修复方案**：将 `_api_call()` 改为 `query_with_retry()`，并添加 `RuntimeError` 异常捕获，跳过查询失败的股票继续下载。与 `download_dividend()` 保持一致的容错模式
   - 修改文件：`src/downloaders/dividend_downloader.py`
+- **2026-07-16**：监控脚本增加进程活跃度检测，自动重启卡死进程
+  - **问题根因**：监控脚本仅检查进程是否存在（`pgrep`），不检查进程是否还在工作。当进程卡死时 PID 仍在，监控误判为"正常"，导致从 08:44 到 09:20 长达 36 分钟未触发重启
+  - **修复方案**：
+    - 新增 `check_process_activity()` 函数：检查日志文件最后修改时间，超过 15 分钟未更新则判定为卡死
+    - 新增 `graceful_kill_download()` 函数：先发送 SIGINT 让进程保存 checkpoint，等待最多 10 秒，超时才强制 kill -9
+    - 调整主逻辑优先级：先检查请求上限（达到 49000 则不重启），再检查进程活跃度
+  - 修改文件：`scripts/monitor_baostock.sh`
 - **2026-07-15**：修复分红数据下载器死循环问题
   - **问题根因**：分红下载器使用 `_api_call()` 而非 `query_with_retry()`，当 BaoStock 会话过期时无法自动重登录，导致 `fetch_all_rows()` 陷入死循环（CPU 100%，32 分钟无进展）
   - **修复方案**：
