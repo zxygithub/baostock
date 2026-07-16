@@ -309,6 +309,10 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-07-16**：修复复权因子下载器 (`download_adjust_factor`) 死循环问题
+  - **问题根因**：2026-07-15 修复分红下载器死循环时，遗漏了同一文件中的 `download_adjust_factor()` 方法。该方法仍使用 `_api_call()` 而非 `query_with_retry()`，当 BaoStock 会话过期时同样会陷入死循环（CPU 空转、网络 I/O 冻结、无日志输出）
+  - **修复方案**：将 `_api_call()` 改为 `query_with_retry()`，并添加 `RuntimeError` 异常捕获，跳过查询失败的股票继续下载。与 `download_dividend()` 保持一致的容错模式
+  - 修改文件：`src/downloaders/dividend_downloader.py`
 - **2026-07-15**：修复分红数据下载器死循环问题
   - **问题根因**：分红下载器使用 `_api_call()` 而非 `query_with_retry()`，当 BaoStock 会话过期时无法自动重登录，导致 `fetch_all_rows()` 陷入死循环（CPU 100%，32 分钟无进展）
   - **修复方案**：
@@ -440,6 +444,6 @@ A: 可以使用 `./clean_data.sh` 清理不需要的历史数据。
 A: 使用 `./start.sh status` 查看数据库状态，或查看日志文件。
 
 ---
-*最后更新：2026 年 7 月 15 日*
+*最后更新：2026 年 7 月 16 日*
 
 <!-- 测试 Gitee → GitHub 镜像同步 -->

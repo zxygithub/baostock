@@ -169,11 +169,16 @@ class DividendDownloader(BaseDownloader):
         for code in tqdm(codes, desc="Adjust factor"):
             if self._interrupted:
                 break
-            rs = self._api_call(
-                bs.query_adjust_factor,
-                code=code, start_date=start_date, end_date=end_date,
-            )
-            rows = fetch_all_rows(rs)
+            try:
+                rs = self.query_with_retry(
+                    bs.query_adjust_factor,
+                    code=code, start_date=start_date, end_date=end_date,
+                )
+                rows = fetch_all_rows(rs)
+            except RuntimeError as e:
+                self.logger.warning(f"adjust_factor: skipping {code} after retries: {e}")
+                time.sleep(batch_sleep)
+                continue
             if not rows:
                 time.sleep(batch_sleep)
                 continue
