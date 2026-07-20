@@ -309,6 +309,10 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-07-20**：修复监控脚本活跃度检测失效问题
+  - **问题根因**：监控脚本使用 `find` 查找最近修改的日志文件来检测进程活跃度，但 `monitor_baostock.log` 本身也在 `logs/` 目录下且每 10 分钟更新一次。导致 `latest_log` 总是指向监控日志而非下载进程日志，活跃度检测形同虚设。2026-07-20 07:50 启动的下载进程在 09:05 卡死（2.5 小时无日志输出），监控一直报"正常"
+  - **修复方案**：`find` 命令排除监控相关日志文件（`monitor_baostock.log`、`cron_*.log`、`kill_baostock.log`），确保只检查下载进程的日志文件
+  - 修改文件：`scripts/monitor_baostock.sh`
 - **2026-07-16**：修复复权因子下载器 (`download_adjust_factor`) 死循环问题
   - **问题根因**：2026-07-15 修复分红下载器死循环时，遗漏了同一文件中的 `download_adjust_factor()` 方法。该方法仍使用 `_api_call()` 而非 `query_with_retry()`，当 BaoStock 会话过期时同样会陷入死循环（CPU 空转、网络 I/O 冻结、无日志输出）
   - **修复方案**：将 `_api_call()` 改为 `query_with_retry()`，并添加 `RuntimeError` 异常捕获，跳过查询失败的股票继续下载。与 `download_dividend()` 保持一致的容错模式

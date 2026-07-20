@@ -313,7 +313,11 @@ main() {
         else
             # 有进程，检查活跃度
             local latest_log
-            latest_log=$(find "$LOG_DIR" -name "*.log" -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+            latest_log=$(find "$LOG_DIR" -name "*.log" -type f \
+                ! -name "monitor_baostock.log" \
+                ! -name "cron_*.log" \
+                ! -name "kill_baostock.log" \
+                -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
             
             if check_process_activity "$pid" "$latest_log" 15; then
                 log "INFO" "下载进程运行中，正常"
