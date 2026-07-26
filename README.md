@@ -317,6 +317,20 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-07-26**：新增数据空洞自动修复脚本
+  - **新增功能**：`scripts/fix_data_gaps.py` 数据空洞自动修复脚本，读取 `data/integrity_report.json` 并自动补齐缺失数据
+  - **修复范围**：
+    - L3: K线日期空洞（退市股票缺失最后交易日）
+    - L5: 复权因子缺失记录（109 只股票，242 条缺失）
+    - L6: 指数K线空洞（sz.399006 缺失 2006-2010 年数据）
+  - **使用方法**：
+    ```bash
+    ./start.sh check                                    # 先生成完整性报告
+    .venv/bin/python scripts/fix_data_gaps.py          # 自动修复所有空洞
+    .venv/bin/python scripts/fix_data_gaps.py --level 5 # 仅修复特定层级
+    ```
+  - **注意事项**：受 BaoStock API 每日请求限制（49,000 次），如果当日请求已达上限，脚本会提示明日再试
+  - 新增文件：`scripts/fix_data_gaps.py`
 - **2026-07-26**：修复数据完整性校验脚本输出缓冲问题
   - **问题根因**：`start.sh` 使用管道 (`| tee`) 捕获 Python 输出，导致 Python stdout 使用全缓冲模式。校验脚本需要执行约 16,000+ 次查询（L2 层级 5,538 股票 × 3 复权，L3 层级 5,538 股票 × 2 查询），在数据库并发写入（下载进程或 SQLite TUI 工具）时可能变慢，但用户看不到任何进度输出，误以为脚本卡死
   - **修复方案**：在 `start.sh` 的 `run()` 函数中添加 `export PYTHONUNBUFFERED=1`，禁用 Python stdout 缓冲；在 `check_data_integrity.py` 的 `run_all()` 方法中为每个校验层级添加进度输出（使用 `flush=True` 确保立即刷新）
