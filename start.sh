@@ -131,6 +131,11 @@ print('Done.')
 " 2>/dev/null || echo "No database found."
 }
 
+cmd_check() {
+    check_db
+    run "$PYTHON ${SCRIPT_DIR}/scripts/check_data_integrity.py $*" "Data Integrity Check"
+}
+
 cmd_help() {
     cat <<EOF
 Usage: $(basename "$0") <command> [options]
@@ -139,6 +144,7 @@ Commands:
   init          Initialize database (create tables)
   full          Full data download (all phases)
   update        Daily incremental update
+  check         Check data integrity (generates JSON + text reports)
   status        Show database status and table sizes
   logs          Show recent log files
   clean-logs    Remove logs older than 7 days (pass days as arg)
@@ -149,6 +155,10 @@ Examples:
   $(basename "$0") full
   $(basename "$0") full --skip-financial --skip-minute
   $(basename "$0") update
+  $(basename "$0") check                    # Full integrity check
+  $(basename "$0") check --date 2026-07-20  # Check as of specific date
+  $(basename "$0") check --level 1          # Check only L1 (meta tables)
+  $(basename "$0") check --code sh.600000   # Check specific stock
   $(basename "$0") status
   $(basename "$0") logs
   $(basename "$0") clean-logs 30
@@ -169,6 +179,7 @@ case "$COMMAND" in
     init)       cmd_init ;;
     full)       cmd_full "$@" ;;
     update)     cmd_update "$@" ;;
+    check)      cmd_check "$@" ;;
     status)     cmd_status ;;
     logs)       cmd_logs ;;
     clean-logs) cmd_clean_logs "${1:-7}" ;;

@@ -36,6 +36,12 @@ uv sync
 # 检查下载进度
 ./start.sh status
 
+# 数据完整性校验
+./start.sh check                          # 全量检查
+./start.sh check --code sh.600000         # 检查单只股票
+./start.sh check --level 1 --level 7      # 检查指定层级
+./start.sh check --date 2026-07-20        # 指定校验基准日
+
 # 查看最近日志
 ./start.sh logs
 ```
@@ -65,6 +71,7 @@ uv sync
 - **[数据分析](docs/数据分析.md)** - 各表 API 拉取前置条件分析
 - **[代码审查](docs/code_review_2026-04-28.md)** - 全代码逻辑审查报告
 - **[API 请求日志分析](docs/api_request_log_analysis.md)** - 日志统计与异常排查指南
+- **[数据完整性校验方案](docs/data_integrity_check_plan.md)** - 数据校验方案设计与实现
 - **[BaoStock API](docs/pythonAPI.md)** - BaoStock官方API文档
 - **[BaoStock复权因子简介](docs/BaoStock复权因子简介.pdf)** - 复权算法说明（PDF）
 
@@ -85,6 +92,7 @@ baostock/
 │   ├── download_all.py     # 全量下载
 │   ├── update_daily.py     # 增量更新
 │   ├── init_db.py          # 数据库初始化
+│   ├── check_data_integrity.py  # 数据完整性校验
 │   ├── daily_report.py     # 邮件日报
 │   ├── monitor_baostock.sh # 服务器连通性监控
 │   ├── kill_baostock.sh    # 进程终止脚本
@@ -309,6 +317,22 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-07-26**：新增数据完整性校验功能
+  - **新增功能**：`scripts/check_data_integrity.py` 数据完整性校验脚本，支持 8 层校验（L1-L8）
+  - **校验层级**：
+    - L1: 基础表完整性（trade_dates、stock_basic、行业分类、指数成分股）
+    - L2: K线覆盖率（日/周/月线，3种复权分别统计）
+    - L3: K线日期连续性（空洞检测 + 最新数据截止日检查）
+    - L4: 财务数据覆盖率（6表 + 六表一致性）
+    - L5: 分红与复权因子匹配
+    - L6: 指数K线空洞检测
+    - L7: 宏观数据校验
+    - L8: 数据质量（价格、成交量、涨跌幅异常）
+  - **输出报告**：生成 JSON 和文字两份报告（`data/integrity_report.json` 和 `data/integrity_report.txt`）
+  - **命令行支持**：`./start.sh check` 命令，支持 `--code`、`--level`、`--date` 参数
+  - **设计文档**：`docs/data_integrity_check_plan.md` 完整校验方案设计
+  - 新增文件：`scripts/check_data_integrity.py`、`docs/data_integrity_check_plan.md`
+  - 修改文件：`start.sh`、`README.md`
 - **2026-07-20**：修复监控脚本活跃度检测失效问题
   - **问题根因**：监控脚本使用 `find` 查找最近修改的日志文件来检测进程活跃度，但 `monitor_baostock.log` 本身也在 `logs/` 目录下且每 10 分钟更新一次。导致 `latest_log` 总是指向监控日志而非下载进程日志，活跃度检测形同虚设。2026-07-20 07:50 启动的下载进程在 09:05 卡死（2.5 小时无日志输出），监控一直报"正常"
   - **修复方案**：`find` 命令排除监控相关日志文件（`monitor_baostock.log`、`cron_*.log`、`kill_baostock.log`），确保只检查下载进程的日志文件
@@ -455,6 +479,6 @@ A: 可以使用 `./clean_data.sh` 清理不需要的历史数据。
 A: 使用 `./start.sh status` 查看数据库状态，或查看日志文件。
 
 ---
-*最后更新：2026 年 7 月 16 日*
+*最后更新：2026 年 7 月 26 日*
 
 <!-- 测试 Gitee → GitHub 镜像同步 -->
