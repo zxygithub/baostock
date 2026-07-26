@@ -602,20 +602,28 @@ class DataIntegrityChecker:
         }
 
         if not levels or 1 in levels:
+            print("  [1/8] L1: 基础表完整性...", flush=True)
             report["L1_meta"] = self.check_L1_meta()
         if not levels or 2 in levels:
+            print("  [2/8] L2: K线覆盖率...", flush=True)
             report["L2_kline_coverage"] = self.check_L2_kline_coverage()
         if not levels or 3 in levels:
+            print("  [3/8] L3: K线日期连续性...", flush=True)
             report["L3_kline_gaps"] = self.check_L3_kline_gaps()
         if not levels or 4 in levels:
+            print("  [4/8] L4: 财务数据覆盖率...", flush=True)
             report["L4_financial"] = self.check_L4_financial()
         if not levels or 5 in levels:
+            print("  [5/8] L5: 分红与复权因子...", flush=True)
             report["L5_dividend"] = self.check_L5_dividend()
         if not levels or 6 in levels:
+            print("  [6/8] L6: 指数K线空洞...", flush=True)
             report["L6_index"] = self.check_L6_index()
         if not levels or 7 in levels:
+            print("  [7/8] L7: 宏观数据...", flush=True)
             report["L7_macro"] = self.check_L7_macro()
         if not levels or 8 in levels:
+            print("  [8/8] L8: 数据质量...", flush=True)
             report["L8_quality"] = self.check_L8_quality()
 
         report["summary"]["overall_completeness"] = self._calculate_completeness(report)

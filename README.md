@@ -317,6 +317,10 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-07-26**：修复数据完整性校验脚本输出缓冲问题
+  - **问题根因**：`start.sh` 使用管道 (`| tee`) 捕获 Python 输出，导致 Python stdout 使用全缓冲模式。校验脚本需要执行约 16,000+ 次查询（L2 层级 5,538 股票 × 3 复权，L3 层级 5,538 股票 × 2 查询），在数据库并发写入（下载进程或 SQLite TUI 工具）时可能变慢，但用户看不到任何进度输出，误以为脚本卡死
+  - **修复方案**：在 `start.sh` 的 `run()` 函数中添加 `export PYTHONUNBUFFERED=1`，禁用 Python stdout 缓冲；在 `check_data_integrity.py` 的 `run_all()` 方法中为每个校验层级添加进度输出（使用 `flush=True` 确保立即刷新）
+  - 修改文件：`start.sh`、`scripts/check_data_integrity.py`
 - **2026-07-26**：新增数据完整性校验功能
   - **新增功能**：`scripts/check_data_integrity.py` 数据完整性校验脚本，支持 8 层校验（L1-L8）
   - **校验层级**：

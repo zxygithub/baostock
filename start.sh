@@ -26,6 +26,8 @@ run() {
     echo "[${TIMESTAMP}] START: ${label}" >> "$LOG_FILE"
     echo "───────────────────────────────────────────────────────" >> "$LOG_FILE"
 
+    export PYTHONUNBUFFERED=1
+
     local exit_code=0
     eval "$cmd" 2>&1 | tee -a "$LOG_FILE" || exit_code=$?
 
