@@ -140,10 +140,10 @@ logs/
 
 # Test artifacts
 tests/test_codes.txt
-.vscode/PythonImportHelper-v2-Completion.json
-.qwen/settings.json
+.vscode/
+.qwen/
 .gitignore
-.qwen/settings.json.orig
+.codegraph/
 
 # AI agent work directories
 .sisyphus/
