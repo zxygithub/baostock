@@ -93,12 +93,15 @@ baostock/
 │   ├── update_daily.py     # 增量更新
 │   ├── init_db.py          # 数据库初始化
 │   ├── check_data_integrity.py  # 数据完整性校验
+│   ├── fix_data_gaps.py    # 数据空洞自动修复
 │   ├── daily_report.py     # 邮件日报
 │   ├── monitor_baostock.sh # 服务器连通性监控
 │   ├── kill_baostock.sh    # 进程终止脚本
 │   ├── check_blacklist.py  # 黑名单检测
 │   ├── analyze_latest_dates.py  # 最新日期分析
-│   └── estimate_data_volume.py  # 数据量估算
+│   ├── estimate_data_volume.py  # 数据量估算
+│   ├── count_data.py            # 数据统计
+│   └── insert_null_profit_records.py  # 插入空利润记录
 ├── src/                    # 核心代码
 │   ├── config.py           # 技术常量和字段定义
 │   ├── config_loader.py    # 配置加载器
@@ -317,6 +320,9 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-08-02**：文档维护
+  - 更新项目结构：补充 `scripts/fix_data_gaps.py`、`scripts/count_data.py`、`scripts/insert_null_profit_records.py` 三个缺失脚本
+  - 修改文件：`README.md`
 - **2026-07-26**：新增数据空洞自动修复脚本
   - **新增功能**：`scripts/fix_data_gaps.py` 数据空洞自动修复脚本，读取 `data/integrity_report.json` 并自动补齐缺失数据
   - **修复范围**：
@@ -497,6 +503,6 @@ A: 可以使用 `./clean_data.sh` 清理不需要的历史数据。
 A: 使用 `./start.sh status` 查看数据库状态，或查看日志文件。
 
 ---
-*最后更新：2026 年 7 月 26 日*
+*最后更新：2026 年 8 月 2 日*
 
 <!-- 测试 Gitee → GitHub 镜像同步 -->
