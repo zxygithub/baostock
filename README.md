@@ -320,6 +320,14 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-08-05**：优化月线K线下载逻辑，减少无效 API 请求
+  - **问题根因**：月线K线下载逻辑在月初前3个交易日会请求当月未完成的数据，BaoStock API 对未完成月份返回 rows=0，导致约 16,620 次无效请求（5,540 股票 × 3 复权）
+  - **修复方案**：
+    - **月线完成度检查（month-completion guard）**：如果目标日期仍在当前月份，则只下载到上个月最后一天，避免请求未完成的当月数据
+    - **退市股票过滤**：在查询K线数据前检查股票的 `out_date`，如果股票在 `start_date` 之前已退市，则跳过查询，减少约 228 次/会话的无效请求
+  - **交易日历逻辑验证**：确认现有的 `get_latest_trading_day_on_or_before()` 逻辑已正确处理周末和节假日
+  - **预期效果**：每日减少约 16,848 次无效 API 请求
+  - 修改文件：`scripts/update_daily.py`、`scripts/download_all.py`、`src/downloaders/kline_downloader.py`
 - **2026-08-02**：文档维护
   - 更新项目结构：补充 `scripts/fix_data_gaps.py`、`scripts/count_data.py`、`scripts/insert_null_profit_records.py` 三个缺失脚本
   - 修改文件：`README.md`

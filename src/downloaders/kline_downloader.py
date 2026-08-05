@@ -54,8 +54,13 @@ class KlineDownloader(BaseDownloader):
                 last = self.get_last_downloaded(table, code, adjustflag=adjustflag)
 
                 stock_ipo = None
+                stock_out = None
                 if ipo_dates and code in ipo_dates:
                     stock_ipo = ipo_dates[code][0]
+                    stock_out = ipo_dates[code][1]
+
+                if stock_out and stock_out < start_date:
+                    continue
 
                 effective_start = max(start_date, stock_ipo) if stock_ipo else start_date
                 actual_start = max(effective_start, last) if last else effective_start

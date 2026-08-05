@@ -135,11 +135,19 @@ def main():
                     logger.info(
                         f"Skipping monthly K-line: start {monthly_start} still in same month as latest data ({latest_monthly.strftime('%Y-%m-%d')}), no complete new month to fetch."
                     )
-                elif target_date >= monthly_start:
-                    logger.info(f"Updating monthly K-line: {monthly_start} → {target_date}")
-                    dl.download_monthly_kline(codes, start_date=monthly_start, end_date=target_date)
                 else:
-                    logger.info("Monthly K-line is up to date. Skipping.")
+                    # Month-completion guard: BaoStock only returns monthly data for
+                    # completed months. If target_date is still in the current month,
+                    # we can only download up to the last day of the previous month.
+                    first_day_of_target_month = target_dt.replace(day=1)
+                    last_day_of_prev_month = first_day_of_target_month - timedelta(days=1)
+                    monthly_end_date = last_day_of_prev_month.strftime("%Y-%m-%d")
+
+                    if monthly_end_date < monthly_start:
+                        logger.info("Monthly K-line is up to date. Skipping.")
+                    else:
+                        logger.info(f"Updating monthly K-line: {monthly_start} → {monthly_end_date} (previous complete month)")
+                        dl.download_monthly_kline(codes, start_date=monthly_start, end_date=monthly_end_date)
             else:
                 logger.info(f"Skipping monthly K-line (latest: {latest_monthly.strftime('%Y-%m-%d')}, {len(trading_days_so_far)} trading days into month).")
     else:
