@@ -474,9 +474,15 @@ class DataIntegrityChecker:
         if not self.expected_cutoff:
             return result
 
+        # 每个指数真实有数据的最早日期。晚于 2006-01-01 发布的指数若仍按
+        # 2006 起算，会把发布前的交易日误报为空洞（如创业板指 2010-06-01 发布）。
+        index_data_start = {code: "2006-01-01" for code in INDEX_CODES}
+        index_data_start["sz.399006"] = "2010-06-01"  # 创业板指发布日
+
         for index_code in INDEX_CODES:
-            expected_dates = set(d for d in self.trading_days if "2006-01-01" <= d <= self.expected_cutoff)
-            
+            start = index_data_start.get(index_code, "2006-01-01")
+            expected_dates = set(d for d in self.trading_days if start <= d <= self.expected_cutoff)
+
             rows = self.conn.execute(
                 "SELECT DISTINCT date FROM index_daily WHERE code = ?",
                 (index_code,)

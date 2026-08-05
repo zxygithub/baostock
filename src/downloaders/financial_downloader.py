@@ -171,6 +171,10 @@ class FinancialDownloader(BaseDownloader):
             WHERE t.code IS NULL
         """).fetchall()
         self.conn.execute("DROP TABLE _fin_candidates")
+        # executemany INSERT 隐式开启了事务；若不关闭，遗留的读快照会让
+        # close() 里的 wal_checkpoint(TRUNCATE) 抛 "database table is locked"
+        # （当所有季度已存在、后续没有任何 commit 时触发）。
+        self.conn.rollback()
 
         return rows, len(candidates) - len(rows)
 

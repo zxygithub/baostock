@@ -18,3 +18,8 @@ default = true
 dev = [
     "pytest>=9.0.3",
 ]
+
+[tool.pytest.ini_options]
+# smoke_test.py / integration_test.py 是需要联网、写数据库的手工脚本，
+# 不应被 pytest 默认收集（它们匹配 *_test.py 通配符）。
+python_files = ["test_*.py"]

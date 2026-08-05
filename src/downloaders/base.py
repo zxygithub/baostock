@@ -214,7 +214,12 @@ class BaseDownloader:
 
     def close(self):
         if self._conn:
-            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            try:
+                self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except sqlite3.OperationalError as e:
+                # checkpoint 失败不丢数据（WAL 稍后仍会被回收），但必须
+                # 继续关闭连接并登出，避免泄漏连接和 baostock 会话。
+                self.logger.warning(f"WAL checkpoint failed during close: {e}")
             self._conn.close()
             self._conn = None
         if not self._limit_exceeded:

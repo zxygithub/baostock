@@ -320,6 +320,19 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-08-05**：修复数据全部最新时下载器关闭崩溃（WAL checkpoint 锁）
+  - **问题根因**：`_find_missing_quarters` / `_find_missing_dividend` 用 `executemany INSERT` 向临时表写入候选集，Python sqlite3 隐式开启事务，随后 LEFT JOIN 主表在该事务内持有 WAL 读快照。当数据全部已存在、提前返回且后续没有任何 commit 时，遗留事务导致 `close()` 中的 `PRAGMA wal_checkpoint(TRUNCATE)` 抛出 `database table is locked`，连接和 baostock 会话同时泄漏。冒烟测试阶段 7（财务数据）稳定复现；`download_all.py` 在数据齐全的重跑场景下会在 Phase 9 崩溃，中断后续 Phase 10/11
+  - **修复方案**：
+    - `_find_missing_quarters` / `_find_missing_dividend` 末尾显式 `rollback()` 关闭隐式事务
+    - `BaseDownloader.close()` 改为异常安全：checkpoint 失败仅告警，仍关闭连接并登出（checkpoint 失败不丢数据，WAL 稍后仍会被回收）
+  - **测试基建**：
+    - `pyproject.toml` 限定 pytest 收集范围为 `test_*.py`，避免 `smoke_test.py` / `integration_test.py` 等联网写库的手工脚本（匹配 `*_test.py` 通配符）被 `pytest` 误收集执行
+    - 新增 `tests/test_close_checkpoint.py` 回归测试（5 例），未修复代码下其中 4 例可精确复现原错误
+  - 修改文件：`src/downloaders/financial_downloader.py`、`src/downloaders/dividend_downloader.py`、`src/downloaders/base.py`、`pyproject.toml`、`tests/test_close_checkpoint.py`（新增）
+- **2026-08-05**：修复完整性校验 L6 指数空洞误报
+  - **问题根因**：`check_data_integrity.py` 的 L6 层级对所有指数统一按 2006-01-01 起算期望数据，而创业板指（sz.399006）2010-06-01 才发布，发布前的交易日被误报为 1,073 天空洞，并导致 `fix_data_gaps.py` 反复尝试修复无效缺口
+  - **修复方案**：L6 按每个指数真实有数据的起始日计算期望范围（创业板指取 2010-06-01），复检后误报消除
+  - 修改文件：`scripts/check_data_integrity.py`
 - **2026-08-05**：优化月线K线下载逻辑，减少无效 API 请求
   - **问题根因**：月线K线下载逻辑在月初前3个交易日会请求当月未完成的数据，BaoStock API 对未完成月份返回 rows=0，导致约 16,620 次无效请求（5,540 股票 × 3 复权）
   - **修复方案**：
@@ -511,6 +524,6 @@ A: 可以使用 `./clean_data.sh` 清理不需要的历史数据。
 A: 使用 `./start.sh status` 查看数据库状态，或查看日志文件。
 
 ---
-*最后更新：2026 年 8 月 2 日*
+*最后更新：2026 年 8 月 5 日*
 
 <!-- 测试 Gitee → GitHub 镜像同步 -->
