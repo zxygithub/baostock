@@ -11,6 +11,7 @@
 - **公司报告**：业绩预告、业绩快报、分红送转数据
 - **智能下载**：断点续传、批量处理、会话自动重连
 - **数据管理**：完整的数据库管理工具和日志系统
+- **云端备份**：自动压缩数据库并上传至百度网盘，支持定时备份和旧备份清理
 
 ## 🚀 快速开始
 
@@ -58,6 +59,26 @@ uv sync
 ./clean_data.sh --all
 ```
 
+### 4. 百度网盘备份
+```bash
+# 首次配置：授权 bypy（百度网盘命令行工具）
+pip install bypy
+python -m bypy info    # 按提示完成授权
+
+# 手动执行备份
+.venv/bin/python scripts/backup_to_baidu.py
+
+# 配置定时备份（默认每周日 14:00）
+bash scripts/setup_backup_cron.sh
+
+# 自定义备份时间
+bash scripts/setup_backup_cron.sh 2 30 0   # 每周日 02:30
+bash scripts/setup_backup_cron.sh 14 0 6   # 每周六 14:00
+
+# 保留指定数量的备份（默认保留 7 份）
+.venv/bin/python scripts/backup_to_baidu.py --keep 14
+```
+
 ## 📖 详细文档
 
 - **[执行流程](docs/执行流程.md)** - 详细的项目架构和执行流程说明
@@ -101,7 +122,9 @@ baostock/
 │   ├── analyze_latest_dates.py  # 最新日期分析
 │   ├── estimate_data_volume.py  # 数据量估算
 │   ├── count_data.py            # 数据统计
-│   └── insert_null_profit_records.py  # 插入空利润记录
+│   ├── insert_null_profit_records.py  # 插入空利润记录
+│   ├── backup_to_baidu.py      # 百度网盘备份
+│   └── setup_backup_cron.sh    # 备份定时任务配置
 ├── src/                    # 核心代码
 │   ├── config.py           # 技术常量和字段定义
 │   ├── config_loader.py    # 配置加载器
@@ -320,6 +343,17 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-08-12**：新增百度网盘自动备份功能
+  - **新增功能**：`scripts/backup_to_baidu.py` 百度网盘备份脚本，自动压缩数据库并上传至百度网盘
+  - **功能特性**：
+    - 使用 bypy 授权令牌，直接调用百度网盘 API（precreate → 分片上传 → create 三步流程）
+    - 流式压缩和分片上传（4MB/chunk），避免大文件 OOM
+    - 自动清理旧备份，默认保留最近 7 份
+    - 支持 `--keep` 和 `--data-dir` 命令行参数
+  - **定时备份**：`scripts/setup_backup_cron.sh` 一键配置 crontab，默认每周日 14:00 执行
+  - **依赖更新**：`pyproject.toml` 新增 `requests`、`python-dotenv`、`qrcode[pil]` 依赖
+  - 新增文件：`scripts/backup_to_baidu.py`、`scripts/setup_backup_cron.sh`
+  - 修改文件：`.env.example`、`.gitignore`、`pyproject.toml`、`uv.lock`
 - **2026-08-05**：修复数据全部最新时下载器关闭崩溃（WAL checkpoint 锁）
   - **问题根因**：`_find_missing_quarters` / `_find_missing_dividend` 用 `executemany INSERT` 向临时表写入候选集，Python sqlite3 隐式开启事务，随后 LEFT JOIN 主表在该事务内持有 WAL 读快照。当数据全部已存在、提前返回且后续没有任何 commit 时，遗留事务导致 `close()` 中的 `PRAGMA wal_checkpoint(TRUNCATE)` 抛出 `database table is locked`，连接和 baostock 会话同时泄漏。冒烟测试阶段 7（财务数据）稳定复现；`download_all.py` 在数据齐全的重跑场景下会在 Phase 9 崩溃，中断后续 Phase 10/11
   - **修复方案**：
@@ -524,6 +558,6 @@ A: 可以使用 `./clean_data.sh` 清理不需要的历史数据。
 A: 使用 `./start.sh status` 查看数据库状态，或查看日志文件。
 
 ---
-*最后更新：2026 年 8 月 5 日*
+*最后更新：2026 年 8 月 12 日*
 
 <!-- 测试 Gitee → GitHub 镜像同步 -->

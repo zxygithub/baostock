@@ -105,6 +105,12 @@ ENV/
 env.bak/
 venv.bak/
 
+# Baidu token cache
+.baidu_token.json
+
+# Temp files
+/tmp/
+
 # Spyder project settings
 .spyderproject
 .spyproject
