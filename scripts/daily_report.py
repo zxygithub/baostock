@@ -192,6 +192,7 @@ def get_precise_estimates(conn, counts):
 
     current_year = datetime.now().year
     total_trading_days = len(trading_days)
+    stock_count = len(stocks)
 
     est = {}
 
@@ -201,8 +202,6 @@ def get_precise_estimates(conn, counts):
     fin_totals = {t: 0 for t in ["profit_data", "operation_data", "growth_data",
                                    "balance_data", "cash_flow_data", "dupont_data"]}
     div_total = 0
-    express_total = 0
-    forecast_total = 0
 
     for code, ipo, out in stocks:
         if not ipo:
@@ -229,20 +228,42 @@ def get_precise_estimates(conn, counts):
         if div_years > 0:
             div_total += int(div_years * 0.6)
 
-        rpt_start = max(2003, ipo_year)
-        rpt_years = current_year - rpt_start + 1
-        if rpt_years > 0:
-            express_total += rpt_years
-            forecast_total += rpt_years
-
     est["all_stock_daily"] = total_daily
     est["all_stock_weekly"] = total_weekly
     est["all_stock_monthly"] = total_monthly
     est.update(fin_totals)
     est["dividend"] = div_total
     est["adjust_factor"] = div_total
-    est["performance_express"] = express_total
-    est["forecast_report"] = forecast_total
+
+    # 基于实际数据模式估算业绩快报和业绩预告
+    # 查询已下载股票的平均记录数，然后乘以总股票数
+    try:
+        # 业绩快报：计算已查询股票的平均记录数（排除占位记录）
+        avg_express = conn.execute(
+            "SELECT AVG(cnt) FROM (SELECT COUNT(*) as cnt FROM performance_express "
+            "WHERE performance_exp_pub_date != '9999-01-01' GROUP BY code)"
+        ).fetchone()[0]
+        # 业绩预告：同理
+        avg_forecast = conn.execute(
+            "SELECT AVG(cnt) FROM (SELECT COUNT(*) as cnt FROM forecast_report "
+            "WHERE profit_forecast_exp_pub_date != '9999-01-01' GROUP BY code)"
+        ).fetchone()[0]
+    except Exception:
+        avg_express = None
+        avg_forecast = None
+
+    # 如果有实际数据，使用实际平均值估算；否则使用保守估计
+    if avg_express and avg_express > 0:
+        est["performance_express"] = int(stock_count * avg_express)
+    else:
+        # 保守估计：平均 6 条/股票（基于历史数据统计）
+        est["performance_express"] = stock_count * 6
+
+    if avg_forecast and avg_forecast > 0:
+        est["forecast_report"] = int(stock_count * avg_forecast)
+    else:
+        # 保守估计：平均 6 条/股票
+        est["forecast_report"] = stock_count * 6
 
     est["index_daily"] = 8 * total_trading_days
     est["index_weekly"] = 8 * (total_trading_days // 5)
