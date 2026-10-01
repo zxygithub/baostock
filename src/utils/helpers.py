@@ -1,8 +1,10 @@
 """Utility helper functions for BaoStock data processing."""
 
 import logging
+import subprocess
+import sys
 from collections.abc import Generator
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 
@@ -13,8 +15,10 @@ __all__ = [
     "convert_turn_field",
     "fetch_all_rows",
     "get_current_quarter",
+    "run_main_with_report",
     "safe_float",
     "safe_int",
+    "send_daily_report",
     "setup_logging",
 ]
 
@@ -175,3 +179,43 @@ def batch_iterable(items: list, batch_size: int) -> Generator[list, None, None]:
     """
     for i in range(0, len(items), batch_size):
         yield items[i : i + batch_size]
+
+
+def send_daily_report(reason: str, logger: logging.Logger | None = None) -> None:
+    """Trigger daily_report.py in a subprocess. Never raises."""
+    log = logger or logging.getLogger("baostock")
+    script = Path(__file__).resolve().parents[2] / "scripts" / "daily_report.py"
+    cmd = [
+        sys.executable, str(script),
+        "--if-needed",
+        "--date", date.today().isoformat(),
+        "--reason", reason,
+    ]
+    try:
+        result = subprocess.run(cmd, timeout=120, check=False)
+        if result.returncode != 0:
+            log.warning("daily_report exited %s (fallback cron will retry)", result.returncode)
+    except Exception as e:
+        log.warning("daily_report send failed (fallback cron will retry): %s", e)
+
+
+def run_main_with_report(main_fn, logger: logging.Logger | None = None) -> None:
+    """Send the daily report on completion exits only (normal return or SystemExit(1)).
+
+    Other exits propagate without sending: the monitor restarts those runs,
+    so the task never "completed".
+    """
+    from src.downloaders.base import is_past_shutdown_time
+
+    reason = None
+    try:
+        main_fn()
+    except SystemExit as e:
+        if e.code != 1:
+            raise
+        reason = "达到每日请求上限(49000)"
+    else:
+        reason = ("达到每日停止时间(23:55)"
+                  if is_past_shutdown_time() else "数据拉取完成(全部已更新)")
+    if reason is not None:
+        send_daily_report(reason, logger)
