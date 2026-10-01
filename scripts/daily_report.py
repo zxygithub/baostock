@@ -11,15 +11,16 @@ Usage:
 import sys
 import re
 import os
-import smtplib
 import sqlite3
 import baostock as bs
 from pathlib import Path
 from datetime import datetime, date, timedelta
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 import yaml
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.utils.email_notifier import load_dotenv, load_email_config, send_email
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -30,60 +31,12 @@ LOG_DIR = PROJECT_ROOT / "logs"
 CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 ENV_PATH = PROJECT_ROOT / ".env"
 
-def load_dotenv():
-    """Load environment variables from .env file if it exists."""
-    if not ENV_PATH.exists():
-        return
-    with open(ENV_PATH, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, value = line.split("=", 1)
-                os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 def load_config():
     if not CONFIG_PATH.exists():
         print(f"Config not found: {CONFIG_PATH}")
         sys.exit(1)
     with open(CONFIG_PATH, encoding="utf-8") as f:
         return yaml.safe_load(f)
-
-def get_email_config(cfg):
-    email_cfg = cfg.get("email", {})
-    if not email_cfg.get("enabled"):
-        print("Email reporting is disabled. Set email.enabled: true in config.yaml")
-        sys.exit(0)
-    
-    # All sensitive credentials from .env
-    smtp_server = os.getenv("EMAIL_SMTP_SERVER", "")
-    smtp_port = os.getenv("EMAIL_SMTP_PORT", "465")
-    sender = os.getenv("EMAIL_SENDER", "")
-    password = os.getenv("EMAIL_PASSWORD", "")
-    receiver = os.getenv("EMAIL_RECEIVER", "")
-    
-    required = {
-        "smtp_server": smtp_server,
-        "smtp_port": smtp_port,
-        "sender": sender,
-        "password": password,
-        "receiver": receiver,
-    }
-    missing = [k for k, v in required.items() if not v]
-    if missing:
-        print(f"Missing email config in .env: {', '.join(missing)}")
-        print("Please set EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT, EMAIL_SENDER, etc. in .env")
-        sys.exit(1)
-    
-    return {
-        "smtp_server": smtp_server,
-        "smtp_port": int(smtp_port),
-        "sender": sender,
-        "password": password,
-        "receiver": receiver,
-    }
 
 # ---------------------------------------------------------------------------
 # Database Statistics
@@ -693,14 +646,12 @@ def build_monitor_section(monitor_data):
 # ---------------------------------------------------------------------------
 # Email Generation & Sending
 # ---------------------------------------------------------------------------
-def build_email(sender, start_time, end_time, yesterday_requests, total_requests,
+def build_email(start_time, end_time, yesterday_requests, total_requests,
                 blacklist_status, blacklist_detail, table_rows, api_req, api_analysis_html="",
                 monitor_html="", report_date=None):
     if report_date is None:
         report_date = date.today() - timedelta(days=1)
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"BaoStock 数据下载日报 ({report_date.strftime('%Y-%m-%d')})"
-    msg["From"] = sender
+    subject = f"BaoStock 数据下载日报 ({report_date.strftime('%Y-%m-%d')})"
 
     pct_used = (yesterday_requests / api_req["daily_limit"] * 100) if api_req["daily_limit"] else 0
     est_days = api_req["days_remaining"]
@@ -784,32 +735,7 @@ def build_email(sender, start_time, end_time, yesterday_requests, total_requests
     </body>
     </html>
     """
-    msg.attach(MIMEText(html, "html", "utf-8"))
-    return msg
-
-def send_email(cfg, msg):
-    smtp_server = cfg["smtp_server"]
-    smtp_port = int(cfg["smtp_port"])
-    sender = cfg["sender"]
-    password = cfg["password"]
-    receiver = cfg["receiver"]
-    
-    msg["To"] = receiver
-    
-    try:
-        if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_server, smtp_port)
-        else:
-            server = smtplib.SMTP(smtp_server, smtp_port)
-            server.starttls()
-            
-        server.login(sender, password)
-        server.send_message(msg)
-        server.quit()
-        print(f"✅ Email sent successfully to {receiver}")
-    except Exception as e:
-        print(f"❌ Failed to send email: {e}")
-        sys.exit(1)
+    return subject, html
 
 # ---------------------------------------------------------------------------
 # Main
@@ -817,7 +743,13 @@ def send_email(cfg, msg):
 def main():
     load_dotenv()
     cfg = load_config()
-    email_cfg = get_email_config(cfg)
+    if not cfg.get("email", {}).get("enabled"):
+        print("Email reporting is disabled. Set email.enabled: true in config.yaml")
+        sys.exit(0)
+    email_cfg = load_email_config()
+    if email_cfg is None:
+        print("Missing email config in .env: EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT, EMAIL_SENDER, etc. in .env")
+        sys.exit(1)
 
     conn, yesterday_requests, total_requests, counts = get_db_stats()
     start_time, end_time = get_latest_download_times()
@@ -836,12 +768,16 @@ def main():
     api_log = parse_api_request_log(target_date=report_date_str)
     api_analysis_html = build_api_analysis_section(api_log) if api_log else ""
     
-    msg = build_email(
-        email_cfg["sender"], start_time, end_time, yesterday_requests, total_requests,
+    subject, html = build_email(
+        start_time, end_time, yesterday_requests, total_requests,
         blacklist_status, blacklist_detail, table_rows, api_req, api_analysis_html,
         monitor_html, report_date,
     )
-    send_email(email_cfg, msg)
+    if send_email(email_cfg, subject, html, subtype="html"):
+        print(f"✅ Email sent successfully to {email_cfg['receiver']}")
+    else:
+        print("❌ Failed to send email")
+        sys.exit(1)
     conn.close()
 
 if __name__ == "__main__":
