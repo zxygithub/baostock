@@ -349,6 +349,13 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-10-01**：日报改为数据拉取完成即发
+  - **行为变更**：拉取任务完成（全部更新 / 49000 请求上限 / 日停 23:55 / 手动运行）时立即发送日报，不再等到 0:00
+  - **完成原因**：正文信息卡新增「完成原因」行（数据拉取完成/达到每日停止时间/达到每日请求上限），标签「昨日已使用请求次数」改为「当日已使用请求次数」
+  - **一天一封**：`data/.report_sent_<日期>` 标记去重，先到先得；发送失败不写标记
+  - **兜底保证**：崩溃/被强杀/整日宕机等无法即时发信的情况，由 0:00 cron 以 `--if-needed` 补发（检查昨日标记），最迟次日 0:00 必达
+  - **新参数**：`daily_report.py --if-needed --date YYYY-MM-DD --reason 文本`
+  - 修改文件：`scripts/daily_report.py`、`scripts/download_all.py`、`scripts/update_daily.py`、`src/utils/helpers.py`、`tests/test_daily_report_trigger.py`（新增）、`tests/test_completion_report.py`（新增）
 - **2026-10-01**：修复百度网盘 token 过期导致备份失败（errno -6）
   - **问题根因**：`backup_to_baidu.py` 直接读取 `~/.bypy/bypy.json` 的 `access_token`，无过期检查。access_token 有效期 30 天，过期后 precreate 返回 `errno: -6`，每周定时备份静默失败（只能靠新通知邮件发现）
   - **修复方案**：
