@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import DB_PATH, DAILY_SHUTDOWN_TIME
 from src.db_manager import DBManager
-from src.utils.helpers import setup_logging
+from src.utils.helpers import run_main_with_report, setup_logging
 from src.downloaders.base import is_past_shutdown_time
 from src.downloaders.meta_downloader import MetaDownloader
 from src.downloaders.component_downloader import ComponentDownloader
@@ -187,4 +187,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run_main_with_report(main)

@@ -16,7 +16,7 @@ from src.config_loader import (
     is_download_enabled,
 )
 from src.db_manager import DBManager
-from src.utils.helpers import setup_logging
+from src.utils.helpers import run_main_with_report, setup_logging
 from src.utils.validator import DataValidator
 from src.downloaders.base import is_past_shutdown_time
 from src.downloaders.meta_downloader import MetaDownloader
@@ -279,4 +279,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run_main_with_report(main)
