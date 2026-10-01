@@ -8,6 +8,7 @@ Usage:
     python scripts/daily_report.py
 """
 
+import argparse
 import sys
 import re
 import os
@@ -27,6 +28,7 @@ from src.utils.email_notifier import load_dotenv, load_email_config, send_email
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).parent.parent
 DB_PATH = PROJECT_ROOT / "data" / "baostock.db"
+DATA_DIR = PROJECT_ROOT / "data"
 LOG_DIR = PROJECT_ROOT / "logs"
 CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 ENV_PATH = PROJECT_ROOT / ".env"
@@ -38,16 +40,31 @@ def load_config():
     with open(CONFIG_PATH, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
+
+def report_marker_path(report_date):
+    return DATA_DIR / f".report_sent_{report_date.isoformat()}"
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="BaoStock daily download status email report")
+    parser.add_argument("--if-needed", action="store_true",
+                        help="Skip sending if the report for the date already went out")
+    parser.add_argument("--date", default=None, metavar="YYYY-MM-DD",
+                        help="Report date (default: yesterday)")
+    parser.add_argument("--reason", default="",
+                        help="Completion reason shown in the email body")
+    return parser.parse_args()
+
 # ---------------------------------------------------------------------------
 # Database Statistics
 # ---------------------------------------------------------------------------
-def get_db_stats():
+def get_db_stats(report_date):
     conn = sqlite3.connect(str(DB_PATH))
 
-    yesterday = (date.today() - timedelta(days=1)).isoformat()
-    cursor = conn.execute("SELECT count FROM request_count WHERE date = ?", (yesterday,))
+    day_str = report_date.isoformat()
+    cursor = conn.execute("SELECT count FROM request_count WHERE date = ?", (day_str,))
     row = cursor.fetchone()
-    yesterday_requests = row[0] if row else 0
+    day_requests = row[0] if row else 0
 
     total_requests = conn.execute("SELECT COALESCE(SUM(count), 0) FROM request_count").fetchone()[0]
 
@@ -59,7 +76,7 @@ def get_db_stats():
         except:
             counts[t] = 0
 
-    return conn, yesterday_requests, total_requests, counts
+    return conn, day_requests, total_requests, counts
 
 # ---------------------------------------------------------------------------
 # Log Parsing
@@ -237,7 +254,9 @@ def get_precise_estimates(conn, counts):
     return est
 
 
-def get_api_request_estimates(conn, precise_est=None):
+def get_api_request_estimates(conn, precise_est=None, report_date=None):
+    if report_date is None:
+        report_date = date.today() - timedelta(days=1)
     """Calculate API request estimates by category.
     
     If precise_est is provided, uses precise per-table estimates for
@@ -274,11 +293,11 @@ def get_api_request_estimates(conn, precise_est=None):
     meta_req = 4
 
     total = kline_req + fin_req + report_req + div_req + index_req + macro_req + meta_req
-    daily_limit = conn.execute(
+    day_count_row = conn.execute(
         "SELECT count FROM request_count WHERE date = ?",
-        ((date.today() - timedelta(days=1)).isoformat(),)
+        (report_date.isoformat(),)
     ).fetchone()
-    today_count = daily_limit[0] if daily_limit else 0
+    today_count = day_count_row[0] if day_count_row else 0
 
     DAILY_REQUEST_LIMIT = 49000
 
@@ -297,9 +316,9 @@ def get_api_request_estimates(conn, precise_est=None):
     }
 
 
-def get_progress_table(conn, counts):
+def get_progress_table(conn, counts, report_date):
     estimates = get_precise_estimates(conn, counts)
-    api_req = get_api_request_estimates(conn, estimates)
+    api_req = get_api_request_estimates(conn, estimates, report_date)
 
     categories = {
         "K线数据（日/周/月）": ["all_stock_daily", "all_stock_weekly", "all_stock_monthly"],
@@ -646,15 +665,16 @@ def build_monitor_section(monitor_data):
 # ---------------------------------------------------------------------------
 # Email Generation & Sending
 # ---------------------------------------------------------------------------
-def build_email(start_time, end_time, yesterday_requests, total_requests,
+def build_email(start_time, end_time, day_requests, total_requests,
                 blacklist_status, blacklist_detail, table_rows, api_req, api_analysis_html="",
-                monitor_html="", report_date=None):
+                monitor_html="", report_date=None, reason=""):
     if report_date is None:
         report_date = date.today() - timedelta(days=1)
     subject = f"BaoStock 数据下载日报 ({report_date.strftime('%Y-%m-%d')})"
 
-    pct_used = (yesterday_requests / api_req["daily_limit"] * 100) if api_req["daily_limit"] else 0
+    pct_used = (day_requests / api_req["daily_limit"] * 100) if api_req["daily_limit"] else 0
     est_days = api_req["days_remaining"]
+    reason_html = f'<p><span class="card-label">✅ 完成原因:</span> {reason}</p>' if reason else ""
 
     html = f"""
     <html>
@@ -688,9 +708,10 @@ def build_email(start_time, end_time, yesterday_requests, total_requests,
 
         <div class="info-cards">
             <div class="card">
+                {reason_html}
                 <p><span class="card-label">⏱️ 最近一次拉取开始时间:</span> {start_time}</p>
                 <p><span class="card-label">⏱️ 最近一次拉取结束时间:</span> {end_time}</p>
-                <p><span class="card-label">📈 昨日已使用请求次数:</span> {yesterday_requests:,} 次 ({pct_used:.0f}%)</p>
+                <p><span class="card-label">📈 当日已使用请求次数:</span> {day_requests:,} 次 ({pct_used:.0f}%)</p>
                 <p><span class="card-label">📊 累计总请求次数:</span> {total_requests:,} 次</p>
                 <p><span class="card-label">🛡️ 黑名单状态:</span> <span class="{'status-ok' if '正常' in blacklist_status else 'status-error'}">{blacklist_status}</span> - {blacklist_detail}</p>
             </div>
@@ -741,6 +762,17 @@ def build_email(start_time, end_time, yesterday_requests, total_requests,
 # Main
 # ---------------------------------------------------------------------------
 def main():
+    args = parse_args()
+    if args.date:
+        report_date = datetime.strptime(args.date, "%Y-%m-%d").date()
+    else:
+        report_date = date.today() - timedelta(days=1)
+
+    marker = report_marker_path(report_date)
+    if args.if_needed and marker.exists():
+        print(f"Report for {report_date} already sent, skipping.")
+        return
+
     load_dotenv()
     cfg = load_config()
     if not cfg.get("email", {}).get("enabled"):
@@ -751,30 +783,27 @@ def main():
         print("Missing email config in .env: EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT, EMAIL_SENDER, etc. in .env")
         sys.exit(1)
 
-    conn, yesterday_requests, total_requests, counts = get_db_stats()
+    conn, day_requests, total_requests, counts = get_db_stats(report_date)
     start_time, end_time = get_latest_download_times()
     blacklist_status, blacklist_detail = check_blacklist_status()
-    table_rows, api_req = get_progress_table(conn, counts)
-    api_log = parse_api_request_log()
-    api_analysis_html = build_api_analysis_section(api_log) if api_log else ""
-    
-    # Monitor events
-    monitor_data = get_monitor_events()
-    monitor_html = build_monitor_section(monitor_data) if monitor_data else ""
+    table_rows, api_req = get_progress_table(conn, counts, report_date)
 
-    report_date = date.today() - timedelta(days=1)
-    # Parse API request logs for the report date (yesterday)
     report_date_str = report_date.strftime("%Y%m%d")
     api_log = parse_api_request_log(target_date=report_date_str)
     api_analysis_html = build_api_analysis_section(api_log) if api_log else ""
-    
+
+    monitor_data = get_monitor_events()
+    monitor_html = build_monitor_section(monitor_data) if monitor_data else ""
+
     subject, html = build_email(
-        start_time, end_time, yesterday_requests, total_requests,
+        start_time, end_time, day_requests, total_requests,
         blacklist_status, blacklist_detail, table_rows, api_req, api_analysis_html,
-        monitor_html, report_date,
+        monitor_html, report_date, reason=args.reason,
     )
     if send_email(email_cfg, subject, html, subtype="html"):
         print(f"✅ Email sent successfully to {email_cfg['receiver']}")
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(f"{datetime.now().isoformat()} {args.reason}\n", encoding="utf-8")
     else:
         print("❌ Failed to send email")
         sys.exit(1)
