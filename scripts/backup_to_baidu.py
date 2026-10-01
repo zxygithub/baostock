@@ -51,17 +51,55 @@ MAX_RETRIES = 3
 
 # Token file (from bypy)
 TOKEN_FILE = Path.home() / ".bypy" / "bypy.json"
+TOKEN_URL = "https://openapi.baidu.com/oauth/2.0/token"
+# xpan errnos meaning access_token invalid/expired (-6: common, 31045: xpan download/create)
+TOKEN_INVALID_ERRNOS = (-6, 31045)
+# Proactive refresh window: 1 day before expiry (mtime + expires_in)
+TOKEN_EXPIRY_MARGIN = 24 * 3600
 
 # Backup directory
 BACKUP_DIR = "/apps/bypy/证券数据备份"
 
 
+def _token_needs_refresh(data: dict, token_file: Path) -> bool:
+    expires_in = data.get("expires_in") or 0
+    if expires_in <= 0:
+        return False
+    return time.time() > token_file.stat().st_mtime + expires_in - TOKEN_EXPIRY_MARGIN
+
+
+def refresh_access_token() -> str:
+    """Refresh and persist the rotated token pair; raises RuntimeError on failure."""
+    data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
+    refresh = data.get("refresh_token", "")
+    if not refresh:
+        raise RuntimeError(f"No refresh_token in {TOKEN_FILE}\nPlease run: python -m bypy info")
+    # Refresh must present the same OAuth app that issued the token (bypy's
+    # built-in app); overridable via BAIDU_API_KEY/BAIDU_API_SECRET.
+    resp = requests.post(TOKEN_URL, data={
+        "grant_type": "refresh_token",
+        "refresh_token": refresh,
+        "client_id": os.getenv("BAIDU_API_KEY", "q8WE4EpCsau1oS0MplgMKNBn"),
+        "client_secret": os.getenv("BAIDU_API_SECRET", "PA4MhwB5RE7DacKtoP2i8ikCnNzAqYTD"),
+    }, timeout=30)
+    result = resp.json()
+    if "access_token" not in result:
+        raise RuntimeError(f"Token refresh failed: {result}\nPlease run: python -m bypy info")
+    TOKEN_FILE.write_text(json.dumps(result), encoding="utf-8")
+    TOKEN_FILE.chmod(0o600)
+    logger.info("Baidu access_token refreshed, expires_in=%s", result.get("expires_in"))
+    return result["access_token"]
+
+
 def load_token() -> str:
-    """Load access token from bypy token file."""
+    """Load access_token, auto-refreshing when expired (expiry = file mtime + expires_in)."""
     if not TOKEN_FILE.exists():
         raise RuntimeError(f"Token file not found: {TOKEN_FILE}\nPlease run: python -m bypy info")
-    with open(TOKEN_FILE) as f:
-        return json.load(f).get("access_token", "")
+    data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
+    if _token_needs_refresh(data, TOKEN_FILE):
+        logger.info("Baidu token expired or expiring soon, refreshing...")
+        return refresh_access_token()
+    return data.get("access_token", "")
 
 
 def create_backup_archive(data_dir: Path, output_path: Path) -> Path:
@@ -81,6 +119,14 @@ def create_backup_archive(data_dir: Path, output_path: Path) -> Path:
     return output_path
 
 
+def _precreate(token: str, remote_path: str, file_size: int, block_list: list) -> dict:
+    resp = requests.post(FILE_API_URL,
+        params={"access_token": token, "method": "precreate", "openapi": "xpansdk"},
+        data={"path": remote_path, "size": file_size, "isdir": 0, "autoinit": 1, "rtype": 3, "block_list": json.dumps(block_list)},
+        timeout=30)
+    return resp.json()
+
+
 def upload_file(token: str, filepath: Path, remote_path: str) -> bool:
     """Upload file to Baidu Pan using streaming reads to avoid OOM."""
     file_size = filepath.stat().st_size
@@ -98,11 +144,11 @@ def upload_file(token: str, filepath: Path, remote_path: str) -> bool:
 
     # Step 1: Precreate
     logger.info("Step 1/3: Precreate...")
-    resp = requests.post(FILE_API_URL,
-        params={"access_token": token, "method": "precreate", "openapi": "xpansdk"},
-        data={"path": remote_path, "size": file_size, "isdir": 0, "autoinit": 1, "rtype": 3, "block_list": json.dumps(block_list)},
-        timeout=30)
-    result = resp.json()
+    result = _precreate(token, remote_path, file_size, block_list)
+    if result.get("errno") in TOKEN_INVALID_ERRNOS:
+        logger.warning(f"Token rejected at precreate (errno {result.get('errno')}), refreshing...")
+        token = refresh_access_token()
+        result = _precreate(token, remote_path, file_size, block_list)
     if result.get("errno") != 0:
         logger.error(f"Precreate failed: {result}")
         return False

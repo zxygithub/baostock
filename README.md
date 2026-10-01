@@ -349,6 +349,15 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-10-01**：修复百度网盘 token 过期导致备份失败（errno -6）
+  - **问题根因**：`backup_to_baidu.py` 直接读取 `~/.bypy/bypy.json` 的 `access_token`，无过期检查。access_token 有效期 30 天，过期后 precreate 返回 `errno: -6`，每周定时备份静默失败（只能靠新通知邮件发现）
+  - **修复方案**：
+    - **主动刷新**：`load_token()` 按 token 文件 mtime + `expires_in`（提前 1 天余量）判断过期，过期即调百度 OAuth `refresh_token` 流程刷新（refresh_token 有效期 10 年）
+    - **被动兜底**：precreate 返回 `errno -6/31045`（token 失效）时自动刷新并重试一次，防时钟漂移
+    - **轮转持久化**：每次刷新响应含新的一次性 refresh_token，完整写回 `~/.bypy/bypy.json`（0600）
+    - **凭据约束**：刷新必须用签发 app（bypy 内置 app）的凭据，支持 `BAIDU_API_KEY/BAIDU_API_SECRET` 覆盖；刷新失败明确提示 `python -m bypy info` 重新授权
+    - **死配置清理**：删除无人引用的 `.baidu_token.json`；`.env.example` 注明 `BAIDU_APP_*` 与 token 刷新无关
+  - 修改文件：`scripts/backup_to_baidu.py`、`tests/test_baidu_token.py`（新增）、`.env.example`
 - **2026-10-01**：新增百度网盘备份结果邮件通知
   - **新增功能**：每次备份（成功/失败）结束后向 `EMAIL_RECEIVER` 发送一封纯文本通知邮件，主题格式 `证券数据baostock百度云备份结果-YYYY年MM月DD日`（成功失败同主题，正文首行区分）
   - **成功正文**：备份时间、归档文件、归档大小、远端路径、总耗时、保留/清理备份数；**失败正文**：失败阶段（初始化/打包/上传）、错误信息、日志位置 `logs/backup.log`
