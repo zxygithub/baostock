@@ -9,6 +9,7 @@ Usage:
 """
 
 import os
+import io
 import sys
 import json
 import tarfile
@@ -21,9 +22,15 @@ from datetime import datetime
 
 import requests
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.config_loader import load_config
+from src.utils.email_notifier import load_dotenv, load_email_config, send_email
+
 # Force unbuffered output
-sys.stdout.reconfigure(line_buffering=True)
-sys.stderr.reconfigure(line_buffering=True)
+for _stream in (sys.stdout, sys.stderr):
+    if isinstance(_stream, io.TextIOWrapper):
+        _stream.reconfigure(line_buffering=True)
 
 # Setup logging
 logging.basicConfig(
@@ -155,13 +162,14 @@ def list_remote_files(token: str, dir_path: str) -> list:
         return []
 
 
-def cleanup_old_backups(token: str, dir_path: str, keep_count: int = 7):
-    """Remove old backups, keeping only the latest N."""
+def cleanup_old_backups(token: str, dir_path: str, keep_count: int = 7) -> int:
+    """Remove old backups, keeping only the latest N. Returns number deleted."""
     files = list_remote_files(token, dir_path)
     backup_files = [f for f in files if f.get("server_filename", "").startswith("baostock_backup_")]
     if len(backup_files) <= keep_count:
-        return
+        return 0
     backup_files.sort(key=lambda x: x.get("mtime", 0), reverse=True)
+    deleted = 0
     for f in backup_files[keep_count:]:
         filename = f.get("server_filename")
         if filename:
@@ -171,8 +179,70 @@ def cleanup_old_backups(token: str, dir_path: str, keep_count: int = 7):
                     params={"access_token": token, "method": "filemanager", "opera": "delete", "openapi": "xpansdk"},
                     data={"filelist": json.dumps([f"{dir_path}/{filename}"])},
                     timeout=30)
+                deleted += 1
             except Exception as e:
                 logger.warning(f"Failed to delete {filename}: {e}")
+    return deleted
+
+
+def format_size(nbytes: int) -> str:
+    if nbytes >= 1024 ** 3:
+        return f"{nbytes / 1024 ** 3:.1f} GB({nbytes:,} 字节)"
+    return f"{nbytes / 1024 / 1024:.1f} MB({nbytes:,} 字节)"
+
+
+def build_subject(run_date: datetime) -> str:
+    return f"证券数据baostock百度云备份结果-{run_date.year}年{run_date.month:02d}月{run_date.day:02d}日"
+
+
+def build_success_text(result: dict) -> str:
+    return (
+        "证券数据baostock百度云备份已完成。\n"
+        "结果:成功\n"
+        f"备份时间:{result['started_at'].strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"归档文件:{result['archive_name']}\n"
+        f"归档大小:{format_size(result['archive_size'])}\n"
+        f"远端路径:{result['remote_path']}\n"
+        f"总耗时:{result['duration']:.0f} 秒\n"
+        f"保留策略:保留最近 {result['keep_count']} 份,本次清理旧备份 {result['deleted_old']} 份"
+    )
+
+
+def build_failure_text(result: dict) -> str:
+    return (
+        "证券数据baostock百度云备份失败,请尽快处理。\n"
+        "结果:失败\n"
+        f"失败阶段:{result['stage']}\n"
+        f"错误信息:{result['error']}\n"
+        f"备份时间:{result['started_at'].strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"归档文件:{result['archive_name']}\n"
+        "详细日志:logs/backup.log"
+    )
+
+
+def notify_result(result: dict, args) -> None:
+    """Send backup result email. Never raises; never affects backup exit code."""
+    try:
+        if getattr(args, "no_email", False):
+            logger.info("Email notification skipped (--no-email)")
+            return
+        cfg = load_config()
+        if not cfg.get("email", {}).get("backup_notify", True):
+            logger.info("Email notification disabled (email.backup_notify: false)")
+            return
+        load_dotenv()
+        email_cfg = load_email_config()
+        if email_cfg is None:
+            logger.warning("Email config incomplete in .env, notification skipped")
+            return
+        subject = build_subject(result["started_at"])
+        body = build_success_text(result) if result["success"] else build_failure_text(result)
+        if send_email(email_cfg, subject, body):
+            logger.info("Notification email sent to %s", email_cfg["receiver"])
+        else:
+            logger.warning("Notification email not sent (see warning above)")
+    except Exception as e:
+        logger.warning("Notification error (ignored): %s", e)
 
 
 def main():
@@ -180,48 +250,78 @@ def main():
     parser = argparse.ArgumentParser(description="Backup baostock to Baidu Pan")
     parser.add_argument("--keep", type=int, default=7, help="Number of backups to keep")
     parser.add_argument("--data-dir", type=str, default="data", help="Data directory")
+    parser.add_argument("--no-email", action="store_true", help="Skip email notification")
     args = parser.parse_args()
 
-    data_dir = Path(args.data_dir)
-    if not data_dir.exists():
-        logger.error(f"Data directory not found: {data_dir}")
-        sys.exit(1)
-
-    try:
-        token = load_token()
-        logger.info("Token loaded")
-    except Exception as e:
-        logger.error(str(e))
-        sys.exit(1)
-
-    # Cleanup old archives
-    tmp_dir = Path(tempfile.gettempdir())
-    for archive in tmp_dir.glob("baostock_backup_*.tar.gz"):
-        logger.info(f"Cleaning up: {archive.name}")
-        archive.unlink()
-
-    # Create archive
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    started_at = datetime.now()
+    t0 = time.time()
+    timestamp = started_at.strftime("%Y%m%d_%H%M%S")
     archive_name = f"baostock_backup_{timestamp}.tar.gz"
-    archive_path = tmp_dir / archive_name
+    result = {
+        "success": False,
+        "stage": "初始化",
+        "error": None,
+        "archive_name": archive_name,
+        "archive_size": 0,
+        "remote_path": f"{BACKUP_DIR}/{archive_name}",
+        "duration": 0.0,
+        "keep_count": args.keep,
+        "deleted_old": 0,
+        "started_at": started_at,
+    }
+    exit_code = 0
+    archive_path = None
+    token = None
 
     try:
-        create_backup_archive(data_dir, archive_path)
-        remote_path = f"{BACKUP_DIR}/{archive_name}"
-        logger.info(f"Uploading to: {remote_path}")
-
-        if upload_file(token, archive_path, remote_path):
-            cleanup_old_backups(token, BACKUP_DIR, args.keep)
-            logger.info("Backup completed successfully!")
+        data_dir = Path(args.data_dir)
+        if not data_dir.exists():
+            result["error"] = f"Data directory not found: {data_dir}"
+            logger.error(result["error"])
+            exit_code = 1
         else:
-            logger.error("Backup failed!")
-            sys.exit(1)
-    except Exception as e:
-        logger.error(f"Backup failed: {e}")
-        sys.exit(1)
+            try:
+                token = load_token()
+                logger.info("Token loaded")
+            except Exception as e:
+                result["error"] = str(e)
+                logger.error(str(e))
+                exit_code = 1
+
+        if exit_code == 0 and token is not None:
+            # Cleanup old archives
+            tmp_dir = Path(tempfile.gettempdir())
+            for archive in tmp_dir.glob("baostock_backup_*.tar.gz"):
+                logger.info(f"Cleaning up: {archive.name}")
+                archive.unlink()
+
+            archive_path = tmp_dir / archive_name
+            try:
+                result["stage"] = "打包"
+                create_backup_archive(data_dir, archive_path)
+                result["archive_size"] = archive_path.stat().st_size
+                logger.info(f"Uploading to: {result['remote_path']}")
+
+                result["stage"] = "上传"
+                if upload_file(token, archive_path, result["remote_path"]):
+                    result["deleted_old"] = cleanup_old_backups(token, BACKUP_DIR, args.keep)
+                    result["success"] = True
+                    logger.info("Backup completed successfully!")
+                else:
+                    result["error"] = "上传失败,详见日志"
+                    logger.error("Backup failed!")
+                    exit_code = 1
+            except Exception as e:
+                result["error"] = str(e)
+                logger.error(f"Backup failed: {e}")
+                exit_code = 1
     finally:
-        if archive_path.exists():
+        result["duration"] = time.time() - t0
+        if archive_path is not None and archive_path.exists():
             archive_path.unlink()
+        notify_result(result, args)
+
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
