@@ -77,6 +77,12 @@ bash scripts/setup_backup_cron.sh 14 0 6   # 每周六 14:00
 
 # 保留指定数量的备份（默认保留 7 份）
 .venv/bin/python scripts/backup_to_baidu.py --keep 14
+
+# 备份结束后自动发送结果通知邮件（复用 .env 中 EMAIL_* 配置）
+# 主题格式：证券数据baostock百度云备份结果-YYYY年MM月DD日
+# 关闭通知：config.yaml 中 email.backup_notify: false
+# 手动静默试跑：加 --no-email
+.venv/bin/python scripts/backup_to_baidu.py --no-email
 ```
 
 ## 📖 详细文档
@@ -343,6 +349,12 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-10-01**：新增百度网盘备份结果邮件通知
+  - **新增功能**：每次备份（成功/失败）结束后向 `EMAIL_RECEIVER` 发送一封纯文本通知邮件，主题格式 `证券数据baostock百度云备份结果-YYYY年MM月DD日`（成功失败同主题，正文首行区分）
+  - **成功正文**：备份时间、归档文件、归档大小、远端路径、总耗时、保留/清理备份数；**失败正文**：失败阶段（初始化/打包/上传）、错误信息、日志位置 `logs/backup.log`
+  - **公共模块**：`src/utils/email_notifier.py`（从 `daily_report.py` 提炼 `load_dotenv` / `load_email_config` / `send_email`），`daily_report.py` 同步迁移，邮件主题/正文/收发件人不变
+  - **配置**：`config.yaml` 新增 `email.backup_notify` 开关（与日报 `email.enabled` 互不影响）；发信失败仅记 warning，不改变备份退出码；新增 `--no-email` 参数支持静默试跑
+  - 修改文件：`src/utils/email_notifier.py`（新增）、`scripts/backup_to_baidu.py`、`scripts/daily_report.py`、`config.yaml`、`.env.example`、`tests/test_email_notifier.py`（新增）、`tests/test_daily_report_email.py`（新增）、`tests/test_backup_notify.py`（新增）
 - **2026-08-21**：修复日报邮件业绩快报预估逻辑不准确问题
   - **问题根因**：日报邮件中 `performance_express`（业绩快报）的预估逻辑基于"每只股票从 max(2003, IPO年份) 到当前年份每年 1 条记录"的理论最大值，但实际上并非所有公司都会发布业绩快报，导致预估总量偏高（75,861 条），进度显示只有 40.1%
   - **修复方案**：将预估逻辑改为基于实际数据模式——查询数据库中已下载股票的平均记录数，乘以总股票数。新预估 34,623 条，与实际数据 30,432 条更匹配（87.9%）

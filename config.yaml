@@ -78,9 +78,10 @@ stocks:
   batch_sleep: 1  # seconds to sleep between batches
 
 # ---------------------------------------------------------------------------
-# Email reporting (for daily_report.py)
+# Email reporting (for daily_report.py / backup_to_baidu.py)
 # ---------------------------------------------------------------------------
 # Sensitive credentials (smtp_server, smtp_port, sender, password, receiver)
-# should be set in .env file. Only the enabled switch stays here.
+# should be set in .env file. Only the enabled switches stay here.
 email:
-  enabled: true
+  enabled: true        # daily_report.py 日报开关
+  backup_notify: true  # backup_to_baidu.py 备份结果通知开关
