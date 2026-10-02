@@ -33,7 +33,7 @@
 
 | 序号 | 问题 | 原因 | 影响 | 状态 |
 |------|------|------|------|------|
-| 1 | 近三年分红数据不再更新（dividend 表缺 2025/2026） | `c7e6ead` 改 SQL 存在性检查时把 `_find_missing_dividend` 的强制刷新语义写反：原始实现 `if year in recent_years: tasks.append(...)`（近三年无条件重查，与 docstring"forced refresh"一致），重构后变成 `if year not in recent_years`，且 LEFT JOIN 只返回 missing 行——近三年组合从此永远进不了下载任务 | 分红表最新真实记录停在 year=2024（最大除权日 2025-05-21）；复权因子不受影响（其下载无跳过逻辑，靠本次修复的 L5 缺口判据间接保鲜） | ⚠️ 待修复：恢复"近三年候选全部入任务"语义，并按天限次（占位记录 + update_time）控制配额成本 |
+| 1 | 近三年分红数据不再更新（dividend 表缺 2025/2026） | `c7e6ead` 改 SQL 存在性检查时把 `_find_missing_dividend` 的强制刷新语义写反：原始实现 `if year in recent_years: tasks.append(...)`（近三年无条件重查，与 docstring"forced refresh"一致），重构后变成 `if year not in recent_years`，且 LEFT JOIN 只返回 missing 行——近三年组合从此永远进不了下载任务 | 分红表最新真实记录停在 year=2024（最大除权日 2025-05-21） | ✅ 已修复（2026-10-02）：近期 `operate` 组合按日强制重查（新除权事件落点）、组合级缺失必查（触发 2025/2026 回填）、纯占位组合每 30 天复核（空响应可能是假空，实测 sh.600000 等 2023/2024 占位遮蔽真实分红）、单批 1000 条限流 |
 
 ---
 

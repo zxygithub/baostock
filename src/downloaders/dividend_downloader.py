@@ -2,13 +2,15 @@ import baostock as bs
 import pandas as pd
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from tqdm import tqdm
 
 from src.downloaders.base import BaseDownloader
 from src.config import RENAME_DIVIDEND, RENAME_ADJUST_FACTOR
 from src.config_loader import get_batch_sleep, get_financial_start_year
 from src.utils.helpers import fetch_all_rows
+
+_PLACEHOLDER_HEAL_BATCH = 1000
 
 
 class DividendDownloader(BaseDownloader):
@@ -79,12 +81,11 @@ class DividendDownloader(BaseDownloader):
                 all_rows.append(list(row) + [year, year_type])
 
             if not all_rows:
-                if year not in recent_years:
-                    df = pd.DataFrame(
-                        [[code, '9999-01-01', year, year_type]],
-                        columns=['code', 'divid_operate_date', 'year', 'year_type']
-                    )
-                    placeholder_dfs.append(df)
+                df = pd.DataFrame(
+                    [[code, '9999-01-01', year, year_type]],
+                    columns=['code', 'divid_operate_date', 'year', 'year_type']
+                )
+                placeholder_dfs.append(df)
                 time.sleep(batch_sleep)
                 continue
 
@@ -92,6 +93,12 @@ class DividendDownloader(BaseDownloader):
             df = pd.DataFrame(all_rows, columns=columns)
             df.rename(columns=RENAME_DIVIDEND, inplace=True)
             self.save_df(df, "dividend", if_exists="upsert")
+            self.conn.execute(
+                "DELETE FROM dividend WHERE code = ? AND divid_operate_date = '9999-01-01' "
+                "AND year = ? AND year_type = ?",
+                (code, year, year_type),
+            )
+            self.conn.commit()
             total_rows += len(df)
             time.sleep(batch_sleep)
 
@@ -115,14 +122,22 @@ class DividendDownloader(BaseDownloader):
         self,
         candidates: list[tuple[str, int, str]],
         recent_years: set[int],
+        today: str | None = None,
     ) -> dict:
-        """Find missing (code, year, year_type) combos using SQL, not full-table scan.
+        """Find (code, year, year_type) combos that should be queried.
 
-        Creates a temp table with candidates, then LEFT JOINs against dividend
-        to find missing entries. Recent years are always included (forced refresh).
+        Query targets: combos with no rows at all; recent-year 'operate'
+        combos last checked before today (new ex-dividend events land in the
+        operate window — daily probe); placeholder-only combos last checked
+        over 30 days ago (an empty reply can be bogus and must be re-checked).
         """
         if not candidates:
             return {"tasks": [], "skipped": 0}
+        if today is None:
+            today = datetime.now().strftime("%Y-%m-%d")
+        heal_cutoff = (
+            datetime.strptime(today, "%Y-%m-%d") - timedelta(days=30)
+        ).strftime("%Y-%m-%d")
 
         self.conn.execute("DROP TABLE IF EXISTS _div_candidates")
         self.conn.execute(
@@ -134,30 +149,38 @@ class DividendDownloader(BaseDownloader):
         )
 
         rows = self.conn.execute("""
-            SELECT c.code, c.year, c.year_type
+            SELECT c.code, c.year, c.year_type,
+                   s.last_check, s.n_rows, s.n_placeholder
             FROM _div_candidates c
-            LEFT JOIN dividend d
-                ON c.code = d.code AND c.year = d.year AND c.year_type = d.year_type
-            WHERE d.code IS NULL
+            LEFT JOIN (
+                SELECT code, year, year_type,
+                       MAX(update_time) AS last_check,
+                       COUNT(*) AS n_rows,
+                       SUM(CASE WHEN divid_operate_date = '9999-01-01'
+                                THEN 1 ELSE 0 END) AS n_placeholder
+                FROM dividend
+                GROUP BY code, year, year_type
+            ) s ON s.code = c.code AND s.year = c.year AND c.year_type = s.year_type
         """).fetchall()
-        self.conn.execute("DROP TABLE _div_candidates")
+        self.conn.execute("DROP TABLE IF EXISTS _div_candidates")
         # executemany INSERT 隐式开启了事务；若不关闭，遗留的读快照会让
         # close() 里的 wal_checkpoint(TRUNCATE) 抛 "database table is locked"
         # （当所有分红已存在、后续没有任何 commit 时触发）。
         self.conn.rollback()
 
         tasks = []
-        skipped = 0
-        for code, year, year_type in rows:
-            if year not in recent_years:
+        heal = []
+        for code, year, year_type, last_check, n_rows, n_placeholder in rows:
+            day = (last_check or "")[:10]
+            if n_rows is None:
                 tasks.append((code, year, year_type))
-            else:
-                skipped += 1
-        # All candidates minus tasks = skipped (existing + recent forced)
-        total_existing = len(candidates) - len(tasks) - len([
-            c for c in candidates if c[1] in recent_years
-        ])
-        return {"tasks": tasks, "skipped": total_existing}
+            elif year in recent_years and year_type == "operate" and day < today:
+                tasks.append((code, year, year_type))
+            elif n_placeholder == n_rows and day < heal_cutoff:
+                heal.append((day, code, year, year_type))
+        heal.sort()
+        tasks.extend((c, y, t) for _, c, y, t in heal[:_PLACEHOLDER_HEAL_BATCH])
+        return {"tasks": tasks, "skipped": len(rows) - len(tasks)}
 
     def _find_stale_adjust_factor(self, codes: list[str], today: str) -> tuple[list[str], int]:
         """Find codes needing an adjust-factor re-query (temp table + LEFT JOIN).

@@ -124,7 +124,8 @@ class TestDividendCloseAfterAllUpToDate:
             {
                 "dividend": (
                     "CREATE TABLE dividend ("
-                    "code TEXT, year INTEGER, year_type TEXT, "
+                    "code TEXT, divid_operate_date TEXT, "
+                    "year INTEGER, year_type TEXT, update_time TEXT, "
                     "PRIMARY KEY (code, year, year_type))"
                 ),
             },
