@@ -24,13 +24,13 @@ def _stub_shutdown(monkeypatch, value):
     monkeypatch.setattr("src.downloaders.base.is_past_shutdown_time", lambda: value)
 
 
-def test_normal_return_sends_completion_reason(monkeypatch):
+def test_normal_return_mid_day_does_not_send(monkeypatch):
     sent = _capture_send(monkeypatch)
     _stub_shutdown(monkeypatch, False)
 
     helpers.run_main_with_report(lambda: None)
 
-    assert sent == ["数据拉取完成(全部已更新)"]
+    assert sent == []
 
 
 def test_shutdown_time_sends_shutdown_reason(monkeypatch):

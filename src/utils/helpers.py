@@ -200,10 +200,11 @@ def send_daily_report(reason: str, logger: logging.Logger | None = None) -> None
 
 
 def run_main_with_report(main_fn, logger: logging.Logger | None = None) -> None:
-    """Send the daily report on completion exits only (normal return or SystemExit(1)).
+    """Send the daily report only when the day's fetch is truly finished.
 
-    Other exits propagate without sending: the monitor restarts those runs,
-    so the task never "completed".
+    Terminal = SystemExit(1) (49000 limit) or normal return past the 23:55
+    shutdown. A mid-day normal return is just a pass boundary — the monitor
+    restarts the fetch — so it must not send.
     """
     from src.downloaders.base import is_past_shutdown_time
 
@@ -215,7 +216,10 @@ def run_main_with_report(main_fn, logger: logging.Logger | None = None) -> None:
             raise
         reason = "达到每日请求上限(49000)"
     else:
-        reason = ("达到每日停止时间(23:55)"
-                  if is_past_shutdown_time() else "数据拉取完成(全部已更新)")
+        if is_past_shutdown_time():
+            reason = "达到每日停止时间(23:55)"
+        else:
+            log = logger or logging.getLogger("baostock")
+            log.info("趟次结束但当日拉取未终结（monitor 将重启续拉），日报延至真正终结时发送")
     if reason is not None:
         send_daily_report(reason, logger)
