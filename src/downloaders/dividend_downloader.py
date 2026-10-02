@@ -159,6 +159,57 @@ class DividendDownloader(BaseDownloader):
         ])
         return {"tasks": tasks, "skipped": total_existing}
 
+    def _find_stale_adjust_factor(self, codes: list[str], today: str) -> tuple[list[str], int]:
+        """Find codes needing an adjust-factor re-query (temp table + LEFT JOIN).
+
+        Stale = rows not refreshed today, or known dividend events uncovered
+        (the L5 expected-set model). Skipping is safe: rows are append-only
+        per (code, divid_operate_date).
+        """
+        if not codes:
+            return [], 0
+
+        self.conn.execute("DROP TABLE IF EXISTS _af_candidates")
+        self.conn.execute(
+            "CREATE TEMP TABLE _af_candidates (code TEXT PRIMARY KEY)"
+        )
+        self.conn.executemany(
+            "INSERT INTO _af_candidates VALUES (?)", [(c,) for c in codes]
+        )
+
+        rows = self.conn.execute("""
+            SELECT c.code
+            FROM _af_candidates c
+            LEFT JOIN (
+                SELECT code, MAX(update_time) AS last_check
+                FROM adjust_factor GROUP BY code
+            ) m ON m.code = c.code
+            WHERE m.last_check IS NULL OR m.last_check < ?
+            UNION
+            SELECT d.code
+            FROM dividend d
+            JOIN _af_candidates c ON c.code = d.code
+            LEFT JOIN adjust_factor af
+                ON af.code = d.code AND af.divid_operate_date = d.divid_operate_date
+            WHERE d.divid_operate_date != '9999-01-01' AND af.code IS NULL
+        """, (today,)).fetchall()
+        self.conn.execute("DROP TABLE IF EXISTS _af_candidates")
+        # 同 _find_missing_dividend：executemany 隐式事务不回滚会让 close() 的
+        # wal_checkpoint(TRUNCATE) 抛 "database table is locked"
+        self.conn.rollback()
+
+        stale = sorted(r[0] for r in rows)
+        return stale, len(codes) - len(stale)
+
+    def _mark_adjust_checked(self, code: str) -> None:
+        """Write a '9999-01-01' placeholder so an empty result is not re-queried the same day."""
+        df = pd.DataFrame(
+            [[code, '9999-01-01', None, None, None]],
+            columns=['code', 'divid_operate_date', 'fore_adjust_factor',
+                     'back_adjust_factor', 'adjust_factor'],
+        )
+        self.save_df(df, "adjust_factor", if_exists="upsert")
+
     def download_adjust_factor(
         self,
         codes: list[str],
@@ -167,10 +218,17 @@ class DividendDownloader(BaseDownloader):
     ) -> int:
         if start_date is None:
             start_date = f"{get_financial_start_year()}-01-01"
-        
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        stale_codes, skipped = self._find_stale_adjust_factor(codes, today)
+        self.logger.info(
+            f"Adjust factor: {len(stale_codes)} to refresh, "
+            f"{skipped} skipped (already checked today)"
+        )
+
         total_rows = 0
         batch_sleep = get_batch_sleep()
-        for code in tqdm(codes, desc="Adjust factor"):
+        for code in tqdm(stale_codes, desc="Adjust factor"):
             if self._interrupted:
                 break
             try:
@@ -184,11 +242,17 @@ class DividendDownloader(BaseDownloader):
                 time.sleep(batch_sleep)
                 continue
             if not rows:
+                self._mark_adjust_checked(code)
                 time.sleep(batch_sleep)
                 continue
             df = pd.DataFrame(rows, columns=rs.fields)
             df.rename(columns=RENAME_ADJUST_FACTOR, inplace=True)
             self.save_df(df, "adjust_factor", if_exists="upsert")
+            self.conn.execute(
+                "DELETE FROM adjust_factor WHERE code = ? AND divid_operate_date = '9999-01-01'",
+                (code,),
+            )
+            self.conn.commit()
             total_rows += len(df)
             time.sleep(batch_sleep)
         return total_rows
