@@ -105,7 +105,7 @@ def test_send_daily_report_invokes_with_flags(monkeypatch):
     assert "--if-needed" in cmd
     assert cmd[cmd.index("--date") + 1] == date.today().isoformat()
     assert cmd[cmd.index("--reason") + 1] == "测试原因"
-    assert kwargs["timeout"] == 120
+    assert kwargs["timeout"] >= 300
 
 
 def test_send_daily_report_swallows_subprocess_errors(monkeypatch):

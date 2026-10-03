@@ -192,7 +192,9 @@ def send_daily_report(reason: str, logger: logging.Logger | None = None) -> None
         "--reason", reason,
     ]
     try:
-        result = subprocess.run(cmd, timeout=120, check=False)
+        # 日报生成在 16GB 库上需 2~3 分钟（全表 COUNT 扫描），高并发时更久——
+        # 2026-10-03 曾因 120 秒超时把子进程杀死导致当日日报未发出
+        result = subprocess.run(cmd, timeout=600, check=False)
         if result.returncode != 0:
             log.warning("daily_report exited %s (fallback cron will retry)", result.returncode)
     except Exception as e:
