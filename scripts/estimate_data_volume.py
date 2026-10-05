@@ -12,7 +12,7 @@ Usage:
 import sqlite3
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import date, datetime
 
 DB_PATH = Path(__file__).parent.parent / "data" / "baostock.db"
 
@@ -47,9 +47,12 @@ def load_stock_info(conn) -> list[dict]:
 
 
 def load_trade_dates(conn) -> list[str]:
+    """历史交易日（<= 今天）。trade_dates 含年初排定的未来交易日，
+    估算已下载数据量时不能计入。"""
     rows = conn.execute(
         "SELECT calendar_date FROM trade_dates "
-        "WHERE is_trading_day = 1 ORDER BY calendar_date"
+        "WHERE is_trading_day = 1 AND calendar_date <= ? ORDER BY calendar_date",
+        (date.today().isoformat(),),
     ).fetchall()
     return [r[0] for r in rows]
 

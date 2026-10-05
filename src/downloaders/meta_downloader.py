@@ -4,6 +4,7 @@ import baostock as bs
 import pandas as pd
 import logging
 import time
+from datetime import date
 
 from src.downloaders.base import BaseDownloader
 from src.config import RENAME_META, RENAME_INDUSTRY
@@ -17,6 +18,10 @@ class MetaDownloader(BaseDownloader):
     def download_trade_dates(
         self, start_date: str = "1990-01-01", end_date: str | None = None
     ) -> int:
+        if end_date is None:
+            # 交易所年初即公布全年休市安排，BaoStock 服务端支持未来日期。
+            # 默认取到当年末，一次拿满全年交易日历（含尚未发生的交易日）。
+            end_date = f"{date.today().year}-12-31"
         rs = self._api_call(bs.query_trade_dates, start_date, end_date)
         rows = fetch_all_rows(rs)
         df = pd.DataFrame(rows, columns=["calendar_date", "is_trading_day"])

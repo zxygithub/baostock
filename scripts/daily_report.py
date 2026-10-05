@@ -155,8 +155,12 @@ def get_precise_estimates(conn, counts):
         "SELECT code, ipo_date, out_date FROM stock_basic WHERE type = 1"
     ).fetchall()
 
+    # 只统计已发生的交易日（<= 今天）：trade_dates 含年初排定的未来交易日，
+    # 计入期望值会虚增总量、拉低进度百分比。
     trading_days = conn.execute(
-        "SELECT calendar_date FROM trade_dates WHERE is_trading_day = 1 ORDER BY calendar_date"
+        "SELECT calendar_date FROM trade_dates "
+        "WHERE is_trading_day = 1 AND calendar_date <= ? ORDER BY calendar_date",
+        (date.today().isoformat(),),
     ).fetchall()
     trading_days = [r[0] for r in trading_days]
 

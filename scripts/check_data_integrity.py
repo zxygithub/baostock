@@ -56,11 +56,13 @@ class DataIntegrityChecker:
         self._compute_expected_cutoff()
 
     def _load_trade_dates(self):
-        """加载交易日历到内存"""
+        # 仅统计已发生的交易日（<= 今天）：trade_dates 含年初排定的未来交易日，
+        # 若不拦截，latest/expected_cutoff/期望交易日数会被未来日期污染。
         rows = self.conn.execute(
             "SELECT calendar_date FROM trade_dates "
-            "WHERE is_trading_day = 1 "
-            "ORDER BY calendar_date"
+            "WHERE is_trading_day = 1 AND calendar_date <= ? "
+            "ORDER BY calendar_date",
+            (date.today().isoformat(),),
         ).fetchall()
         self.trading_days = [row[0] for row in rows]
         self.latest_trading_day = self.trading_days[-1] if self.trading_days else None
