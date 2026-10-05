@@ -43,6 +43,13 @@ uv sync
 ./start.sh check --level 1 --level 7      # 检查指定层级
 ./start.sh check --date 2026-07-20        # 指定校验基准日
 
+# SQLite 物理结构检查(页面/freelist/索引/schema)
+.venv/bin/python scripts/check_sqlite_structure.py             # 全量检查(15GB 库约 75 分钟,建议每周低峰)
+.venv/bin/python scripts/check_sqlite_structure.py --quick     # 秒级快速检查(跳过完整性深度检查)
+.venv/bin/python scripts/check_sqlite_structure.py --no-email  # 发现损坏也不发告警邮件
+# 退出码:0=健康 1=发现损坏 2=检查器出错
+# 损坏时告警邮件复用 .env 的 EMAIL_* 配置,开关为 config.yaml 的 email.enabled
+
 # 查看最近日志
 ./start.sh logs
 ```
