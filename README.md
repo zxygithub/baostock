@@ -360,6 +360,12 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-10-05**：修复交易日历取不到今年全年数据的问题
+  - **问题根因**：`download_trade_dates` 调用 `bs.query_trade_dates(start_date, end_date=None)`，baostock 库对 `end_date=None` 默认取**当天**而非年底（`stock_metadata.py` 内 `time.strftime("%Y-%m-%d")`），导致日历永远截止到运行当天。实测 BaoStock 服务端本身支持未来日期（`end_date=2026-12-31` 返回全年 365 行含未发生交易日），交易所年初即公布全年休市安排，服务端数据齐全
+  - **修复方案**：(a) `download_trade_dates` 默认 `end_date=当年-12-31`，一次取满全年交易日历（含未来交易日）；(b) 消费点全部按 `calendar_date <= 今天` 过滤，防止未来交易日虚增期望数据量/污染校验：`daily_report.py`（日报进度估算）、`estimate_data_volume.py`（数据量估算）、`check_data_integrity.py`（L1/L3 期望交易日数与 `latest_trading_day`/`expected_cutoff`，含 `--date` 传未来日期的防御）
+  - **附带事实**：`end_date` 传下一年（如 2027-12-31）服务端只返回到当年末——次年休市安排一般当年年底才发布，属正常现象；`query_trade_dates` 按条计 1 次请求（10,000 行/页自动翻页），拉全年不增加 API 配额
+  - **测试**：新增 `tests/test_trade_dates_full_year.py` 7 例（默认区间、显式区间透传、三个消费点排除未来交易日、未来 `--date` 防御），未修复代码下 5 例精确复现
+  - 修改文件：`src/downloaders/meta_downloader.py`、`scripts/daily_report.py`、`scripts/estimate_data_volume.py`、`scripts/check_data_integrity.py`、`tests/test_trade_dates_full_year.py`（新增）、`docs/download_flow.md`、`docs/数据分析.md`
 - **2026-10-03**：修复完成即发日报在发信环节被超时强杀的问题
   - **问题根因**：`send_daily_report` 的 `subprocess.run(timeout=120)` 按"发邮件很快"的错误假设写死，但 `daily_report.py` 在 16GB 库上生成需 2~3 分钟（33 张表全表 COUNT 扫描，下载任务并发时更久）。10-03 10:43 撞 49000 上限后钩子正确触发，但子进程 120 秒被杀（日志留有 timed out 记录），当日日报未即时发出（仅靠 0:00 兜底）
   - **修复方案**：超时提至 600 秒（实测最坏约 5 分钟，留一倍余量）；测试断言改为 `timeout >= 300` 契约
