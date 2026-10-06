@@ -50,7 +50,7 @@ def test_systemexit_1_sends_limit_reason(monkeypatch):
 
     helpers.run_main_with_report(hit_limit)
 
-    assert sent == ["达到每日请求上限(49000)"]
+    assert sent == ["达到每日请求上限(46000)"]
 
 
 def test_keyboardinterrupt_propagates_and_skips(monkeypatch):

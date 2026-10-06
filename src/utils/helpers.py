@@ -7,6 +7,8 @@ from collections.abc import Generator
 from datetime import date, datetime
 from pathlib import Path
 
+from src.config_loader import get_daily_request_limit
+
 
 __all__ = [
     "batch_iterable",
@@ -204,7 +206,7 @@ def send_daily_report(reason: str, logger: logging.Logger | None = None) -> None
 def run_main_with_report(main_fn, logger: logging.Logger | None = None) -> None:
     """Send the daily report only when the day's fetch is truly finished.
 
-    Terminal = SystemExit(1) (49000 limit) or normal return past the 23:55
+    Terminal = SystemExit(1) (daily request limit) or normal return past the 23:55
     shutdown. A mid-day normal return is just a pass boundary — the monitor
     restarts the fetch — so it must not send.
     """
@@ -216,7 +218,7 @@ def run_main_with_report(main_fn, logger: logging.Logger | None = None) -> None:
     except SystemExit as e:
         if e.code != 1:
             raise
-        reason = "达到每日请求上限(49000)"
+        reason = f"达到每日请求上限({get_daily_request_limit()})"
     else:
         if is_past_shutdown_time():
             reason = "达到每日停止时间(23:55)"

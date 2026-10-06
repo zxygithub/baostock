@@ -111,7 +111,7 @@ def get_socket_timeout() -> int:
 
 def get_daily_request_limit() -> int:
     """Get daily API request limit."""
-    return get_api_config().get("daily_request_limit", 95000)
+    return get_api_config().get("daily_request_limit", 46000)
 
 
 def is_download_enabled(category: str, subcategory: str | None = None) -> bool:
