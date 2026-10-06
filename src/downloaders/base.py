@@ -327,6 +327,12 @@ class BaseDownloader:
                 self.logger.warning(
                     f"Query failed (attempt {attempt + 1}): {rs.error_msg}"
                 )
+            except json.JSONDecodeError as e:
+                # 服务端数据损坏（如业绩预告未转义中文引号），重试必然同样失败，直接放弃
+                self.logger.warning(
+                    f"Malformed JSON response, skipping retry (attempt {attempt + 1}): {e}"
+                )
+                break
             except Exception as e:
                 self.logger.warning(f"Query exception (attempt {attempt + 1}): {e}")
 
