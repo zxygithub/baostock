@@ -9,7 +9,13 @@ Usage:
 """
 
 import sys
+from pathlib import Path
+
 import baostock as bs
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.utils.quota import record_requests
 
 
 def check_blacklist():
@@ -22,6 +28,7 @@ def check_blacklist():
     # Step 1: Check login
     print("[1/3] 尝试登录 BaoStock...")
     lg = bs.login()
+    record_requests(1)
     
     if lg.error_code == "10001011":
         print("❌ 登录失败：IP 已被加入黑名单 (error_code: 10001011)")
@@ -30,12 +37,14 @@ def check_blacklist():
         print("   - 加入 BaoStock QQ 群寻求帮助")
         print("   - 等待 24 小时后重试")
         bs.logout()
+        record_requests(1)
         return False
     
     if lg.error_code != "0":
         print(f"❌ 登录失败：{lg.error_msg}")
         print("   建议：检查网络连接或 BaoStock 服务状态")
         bs.logout()
+        record_requests(1)
         return False
     
     print("✅ 登录成功")
@@ -44,17 +53,20 @@ def check_blacklist():
     print()
     print("[2/3] 尝试查询股票基本信息...")
     rs = bs.query_stock_basic(code="sh.600000")
+    record_requests(1)
     
     if rs.error_code == "10001011":
         print("❌ 查询失败：IP 已被加入黑名单 (error_code: 10001011)")
         print("   建议：同上")
         bs.logout()
+        record_requests(1)
         return False
     
     if rs.error_code != "0":
         print(f"❌ 查询失败：{rs.error_msg}")
         print("   建议：可能是临时网络问题，请稍后重试")
         bs.logout()
+        record_requests(1)
         return False
     
     print("✅ 查询成功")
@@ -70,17 +82,20 @@ def check_blacklist():
         frequency="d",
         adjustflag="3",
     )
+    record_requests(1)
     
     if rs.error_code == "10001011":
         print("❌ K 线查询失败：IP 已被加入黑名单 (error_code: 10001011)")
         print("   建议：同上")
         bs.logout()
+        record_requests(1)
         return False
     
     if rs.error_code != "0":
         print(f"❌ K 线查询失败：{rs.error_msg}")
         print("   建议：可能是临时网络问题，请稍后重试")
         bs.logout()
+        record_requests(1)
         return False
     
     # Check if we got data
@@ -100,6 +115,7 @@ def check_blacklist():
     print("=" * 60)
     
     bs.logout()
+    record_requests(1)
     return True
 
 
