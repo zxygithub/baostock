@@ -101,7 +101,10 @@ check_with_retry() {
 check_daily_limit() {
     local today count limit
     today=$(date '+%Y-%m-%d')
-    limit=49000
+    limit=$(awk '/^[[:space:]]*daily_request_limit:/ {print $2; exit}' "${PROJECT_DIR}/config.yaml" 2>/dev/null)
+    if ! [[ "$limit" =~ ^[0-9]+$ ]]; then
+        limit=46000  # fallback; keep in sync with config.yaml api.daily_request_limit
+    fi
     
     count=$("$PYTHON" -c "
 import sqlite3

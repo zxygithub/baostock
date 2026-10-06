@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import daily_report
 
 API_REQ = {
-    "daily_limit": 49000,
+    "daily_limit": 46000,
     "days_remaining": 5,
     "kline": 100,
     "financial": 200,

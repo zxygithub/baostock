@@ -14,6 +14,10 @@ import sys
 from pathlib import Path
 from datetime import date, datetime
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.config_loader import get_daily_request_limit
+
 DB_PATH = Path(__file__).parent.parent / "data" / "baostock.db"
 
 FINANCIAL_START_YEAR = 2007
@@ -305,7 +309,7 @@ def main():
                       report_requests + div_requests + index_requests +
                       macro_requests + meta_requests)
 
-    daily_limit = 49000
+    daily_limit = get_daily_request_limit()
 
     print(f"\n🔢 API 请求数估算")
     print(f"{'─' * 70}")

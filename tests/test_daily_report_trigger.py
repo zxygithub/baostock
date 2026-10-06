@@ -14,7 +14,7 @@ import daily_report
 
 API_REQ = {
     "kline": 1, "financial": 2, "reports": 3, "dividend": 4, "index": 5,
-    "macro": 6, "meta": 7, "total": 28, "daily_limit": 49000,
+    "macro": 6, "meta": 7, "total": 28, "daily_limit": 46000,
     "today_count": 100, "days_remaining": 1.0,
 }
 
@@ -115,11 +115,11 @@ def test_reason_appears_in_body(monkeypatch, tmp_path):
     sent = _patch_heavy(monkeypatch)
 
     _run(monkeypatch, tmp_path,
-         ["--date", "2026-10-01", "--reason", "达到每日请求上限(49000)"])
+         ["--date", "2026-10-01", "--reason", "达到每日请求上限(46000)"])
 
     _, body = sent[0]
     assert "完成原因" in body
-    assert "达到每日请求上限(49000)" in body
+    assert "达到每日请求上限(46000)" in body
 
 
 def test_marker_written_even_without_if_needed(monkeypatch, tmp_path):

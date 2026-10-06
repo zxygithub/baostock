@@ -22,6 +22,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils.email_notifier import load_dotenv, load_email_config, send_email
+from src.config_loader import get_daily_request_limit
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -303,7 +304,7 @@ def get_api_request_estimates(conn, precise_est=None, report_date=None):
     ).fetchone()
     today_count = day_count_row[0] if day_count_row else 0
 
-    DAILY_REQUEST_LIMIT = 49000
+    DAILY_REQUEST_LIMIT = get_daily_request_limit()
 
     return {
         "kline": kline_req,
@@ -728,7 +729,7 @@ def build_email(start_time, end_time, day_requests, total_requests,
                 <p><strong>指数 K 线:</strong> {api_req["index"]:,} 次</p>
                 <p><strong>宏观 + 元数据:</strong> {api_req["macro"] + api_req["meta"]:,} 次</p>
                 <div class="api-divider"></div>
-                <p><strong>总请求数:</strong> {api_req["total"]:,} 次 | <strong>按 49,000 次/天:</strong> 约 {est_days} 天</p>
+                <p><strong>总请求数:</strong> {api_req["total"]:,} 次 | <strong>按 {api_req["daily_limit"]:,} 次/天:</strong> 约 {est_days} 天</p>
             </div>
         </div>
 
