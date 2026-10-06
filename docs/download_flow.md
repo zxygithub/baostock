@@ -671,7 +671,7 @@ for code, year, quarter in all_combinations:
 
 | 参数 | 默认值 | 来源 | 作用 |
 |------|--------|------|------|
-| `daily_request_limit` | 49,000 | config.yaml | 每日 API 请求上限 |
+| `daily_request_limit` | 46,000 | config.yaml | 每日 API 请求上限 |
 | `socket_timeout` | 30 | config.yaml | 网络超时（秒） |
 | `batch_size` | 200 | config.yaml | K 线每批处理的股票数 |
 | `batch_sleep` | 2 | config.yaml | 批次间休眠时间（秒） |

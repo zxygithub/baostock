@@ -171,7 +171,7 @@ baostock/
 # API 配置
 api:
   socket_timeout: 30          # 网络超时（秒）
-  daily_request_limit: 49000  # 每日 API 请求上限
+  daily_request_limit: 46000  # 每日 API 请求上限
 
 # 下载任务开关与日期范围
 download:
@@ -296,8 +296,10 @@ from src.config_loader import (
 .venv/bin/python scripts/check_blacklist.py
 ```
 
+monitor 连通性检查探测到黑名单（error_code 10001011）时写 `data/.blacklisted` 标记进入 **120 分钟退避期**（`BLACKLIST_BACKOFF_MINUTES`），期内跳过一切探测/重启，避免探测请求延长封禁；退避期过自动复测，恢复正常后删除标记。
+
 ### 邮件日报
-- 当日拉取**真正终结**（49000 请求上限 / 日停 23:55）时**立即发送**进度邮件（日报生成约 2~3 分钟，邮件随后送达）
+- 当日拉取**真正终结**（46000 请求上限 / 日停 23:55）时**立即发送**进度邮件（日报生成约 2~3 分钟，邮件随后送达）
 - 多趟 pass 的中间退出不发（monitor 会重启续拉，当天任务未完成）
 - 包含黑名单状态、请求次数、数据拉取评估表、完成原因
 - 一天一封（`data/.report_sent_<日期>` 标记去重）；0:00 cron 兜底补发，最迟次日 0:00 必达

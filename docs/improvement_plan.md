@@ -296,8 +296,8 @@ Phase 4 (按需): H + J
 | 分钟线 | 仅提供近 5 年数据 | 设置合理的 start_date |
 | 财务数据 | 仅提供 2007 年至今 | 设置 FINANCIAL_DATA_START_YEAR=2007 |
 | **并发连接** | **不支持任何并发，2个session即报错** | **必须串行下载，不可并发** |
-| **每日请求总量** | **自设上限 49000/天（防黑名单），触顶自动停拉取** | **严禁随手启动数据请求；诊断只查本地 sqlite，测试一律 mock** |
-| **裸 `bs.*` 调用不入配额账本** | `request_count` 表只统计走 `BaseDownloader` 的调用；monitor 每 10 分钟连通性检查（~290 次/天）、`daily_report` 黑名单检查、手工诊断的裸调用服务端实收但账本看不出 | 规划配额时为 monitor 等裸调用预留余量；新增调用一律走 `BaseDownloader` 以便计量 |
+| **每日请求总量** | **自设上限 46000/天（防黑名单，留 ~4000 余量），触顶自动停拉取** | **严禁随手启动数据请求；诊断只查本地 sqlite，测试一律 mock** |
+| **裸 `bs.*` 调用已入配额账本**（2026-10-06 起） | `login()`/`logout()` 计入 `request_count`（仅计数不做上限检查）；monitor 连通性检查、`daily_report` 黑名单检查、`check_blacklist.py` 经 `src/utils/quota.py record_requests()` 记账（best-effort）。仅 `tests/smoke_test.py` 等手工测试的裸调用仍不入账 | 新增裸调用一律走 `BaseDownloader` 或 `quota.record_requests()` 以便计量 |
 
 ---
 
