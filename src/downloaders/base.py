@@ -171,6 +171,9 @@ class BaseDownloader:
 
     def login(self):
         lg = bs.login()
+        # 登录是会话开销 RPC，服务端同样计入配额，须记账（仅计数，不做上限检查）
+        self._increment_request_count()
+        self.conn.commit()
         if lg.error_code == "10001011":
             self.logger.error(
                 "BaoStock IP is blacklisted. Please seek help in the QQ group."
@@ -184,6 +187,9 @@ class BaseDownloader:
 
     def logout(self):
         bs.logout()
+        # 登出是会话开销 RPC，服务端同样计入配额，须记账（仅计数，不做上限检查）
+        self._increment_request_count()
+        self.conn.commit()
         self.logger.info("BaoStock logout successful")
 
     def ensure_login(self):
