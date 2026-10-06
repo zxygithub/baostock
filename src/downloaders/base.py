@@ -143,9 +143,11 @@ class BaseDownloader:
         self.ensure_login()
         func_name = getattr(func, "__name__", str(func))
         params = _build_params_str(func, *args, **kwargs)
-        rs = func(*args, **kwargs)
-        self._increment_request_count()
-        self._check_limit_after_increment()
+        try:
+            rs = func(*args, **kwargs)
+        finally:
+            self._increment_request_count()
+            self._check_limit_after_increment()
         return _ApiResultWrapper(rs, func_name, params, self.logger)
 
     def _check_limit_after_increment(self):
@@ -292,10 +294,12 @@ class BaseDownloader:
                 self.ensure_login()
                 if self._interrupted:
                     raise SystemExit(0)
-                rs = query_func(**kwargs)
-                # 无论成功失败都计数，因为服务器端已计数
-                self._increment_request_count()
-                self._check_limit_after_increment()
+                try:
+                    rs = query_func(**kwargs)
+                finally:
+                    # 无论成功失败都计数，因为服务器端已计数
+                    self._increment_request_count()
+                    self._check_limit_after_increment()
                 func_name = getattr(query_func, "__name__", str(query_func))
                 params = _build_params_str(query_func, **kwargs)
                 wrapped = _ApiResultWrapper(rs, func_name, params, self.logger)
