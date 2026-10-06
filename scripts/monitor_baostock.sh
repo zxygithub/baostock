@@ -22,10 +22,12 @@ DATA_DIR="${PROJECT_DIR}/data"
 LOG_FILE="${LOG_DIR}/monitor_baostock.log"
 EVENTS_FILE="${DATA_DIR}/monitor_events.json"
 SERVER_DOWN_FLAG="${DATA_DIR}/.server_down"
+BLACKLIST_FLAG="${DATA_DIR}/.blacklisted"
 
 # ─── 常量 ───────────────────────────────────────────────────────────────────
 CHECK_INTERVAL=30      # 每次检测间隔（秒）
 CHECK_COUNT=3          # 检测次数
+BLACKLIST_BACKOFF_MINUTES=120  # 封禁退避窗口（分钟）：期内跳过探测，避免探测请求延长封禁
 SHUTDOWN_HOUR=23       # 关闭开始小时
 SHUTDOWN_MIN=55        # 关闭开始分钟
 STARTUP_HOUR=0         # 启动小时
@@ -61,32 +63,86 @@ is_in_shutdown_window() {
 }
 
 # ─── 检测服务器连通性 ───────────────────────────────────────────────────────
+# 返回: 0=连通, 1=失败, 2=IP 被封禁 (error_code 10001011)
 check_connectivity() {
     timeout 15 "$PYTHON" -c "
 import baostock as bs
 import socket
+import sys
+sys.path.insert(0, '${PROJECT_DIR}')
 socket.setdefaulttimeout(10)
+
+
+def meter_request():
+    try:
+        from src.utils.quota import record_requests
+        record_requests(1)
+    except Exception as e:
+        print('[WARN] 请求计量跳过: %s' % e, file=sys.stderr)
+
+
 lg = bs.login()
+meter_request()
+if lg.error_code == '10001011':
+    bs.logout()
+    meter_request()
+    exit(2)
 if lg.error_code == '0':
     rs = bs.query_stock_basic(code='sh.600000')
+    meter_request()
     bs.logout()
+    meter_request()
+    if rs.error_code == '10001011':
+        exit(2)
     exit(0 if rs.error_code == '0' else 1)
 else:
     bs.logout()
+    meter_request()
     exit(1)
 " 2>/dev/null
     return $?
 }
 
+# ─── 黑名单退避期检查 ───────────────────────────────────────────────────────
+# .blacklisted 标记存在且未超过退避窗口时返回 0，并输出剩余分钟数
+check_blacklist_backoff() {
+    local now mtime age_seconds window_seconds
+    
+    if [ ! -f "$BLACKLIST_FLAG" ]; then
+        return 1
+    fi
+    
+    mtime=$(stat -c %Y "$BLACKLIST_FLAG" 2>/dev/null)
+    if [ -z "$mtime" ]; then
+        return 1
+    fi
+    
+    now=$(date +%s)
+    age_seconds=$((now - mtime))
+    window_seconds=$((BLACKLIST_BACKOFF_MINUTES * 60))
+    if [ "$age_seconds" -ge "$window_seconds" ]; then
+        return 1
+    fi
+    
+    echo $(( (window_seconds - age_seconds + 59) / 60 ))
+    return 0
+}
+
 # ─── 3 次确认检测 ───────────────────────────────────────────────────────────
-# 返回: 0=确认UP, 1=确认DOWN
+# 返回: 0=确认UP, 1=确认DOWN, 2=IP 被封禁(立即停止重试，避免探测延长封禁)
 check_with_retry() {
-    local i
+    local i rc
     for i in $(seq 1 $CHECK_COUNT); do
         log "INFO" "连通性检测 ($i/$CHECK_COUNT)..."
-        if check_connectivity; then
+        check_connectivity
+        rc=$?
+        if [ "$rc" -eq 0 ]; then
             log "INFO" "检测通过 ($i/$CHECK_COUNT)"
             return 0  # UP
+        fi
+        if [ "$rc" -eq 2 ]; then
+            log "ERROR" "检测到 IP 被封禁 (error_code 10001011)，停止重试"
+            return 2  # BLACKLISTED
         fi
         log "WARN" "检测失败 ($i/$CHECK_COUNT)"
         if [ "$i" -lt "$CHECK_COUNT" ]; then
@@ -290,10 +346,25 @@ main() {
         exit 0
     fi
     
-    # 2. 检测连通性（3次确认）
-    if check_with_retry; then
+    # 2. 黑名单退避期检查（探测前执行，期内零网络请求）
+    local backoff_remain check_rc
+    if backoff_remain=$(check_blacklist_backoff); then
+        log "WARN" "封禁退避期，跳过探测（剩余 ${backoff_remain} 分钟）"
+        exit 0
+    fi
+    
+    # 3. 检测连通性（3次确认）
+    check_with_retry
+    check_rc=$?
+    if [ "$check_rc" -eq 0 ]; then
         # 服务器 UP
         log "INFO" "服务器连通"
+        
+        # 封禁解除，清除退避标记
+        if [ -f "$BLACKLIST_FLAG" ]; then
+            rm -f "$BLACKLIST_FLAG"
+            log "INFO" "封禁解除，删除 .blacklisted 标记"
+        fi
         
         # 先检查是否达到请求上限
         if check_daily_limit; then
@@ -336,6 +407,21 @@ main() {
                 start_download
             fi
         fi
+    elif [ "$check_rc" -eq 2 ]; then
+        # IP 被封禁：写退避标记，按服务器下线处理，期内不再探测/重启
+        log "ERROR" "IP 被封禁 (error_code 10001011)，进入 ${BLACKLIST_BACKOFF_MINUTES} 分钟退避期"
+        record_event "blacklisted" "IP 被封禁 (error_code 10001011)，进入退避期"
+        
+        # 终止下载进程
+        kill_download_process || true
+        
+        # 创建/刷新封禁标记（touch 重启退避窗口）
+        touch "$BLACKLIST_FLAG"
+        log "WARN" "创建/刷新 .blacklisted 标记"
+        
+        # 创建标记
+        touch "$SERVER_DOWN_FLAG"
+        log "WARN" "创建 .server_down 标记"
     else
         # 服务器 DOWN
         log "ERROR" "服务器不可达"
