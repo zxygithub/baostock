@@ -57,6 +57,7 @@ class DBManager:
         self._create_money_supply_month(conn)
         self._create_money_supply_year(conn)
         self._create_request_count(conn)
+        self._create_daily_probe_memo(conn)
         conn.commit()
 
     def _create_trade_dates(self, conn: sqlite3.Connection) -> None:
@@ -667,6 +668,17 @@ class DBManager:
             )
         """)
 
+    def _create_daily_probe_memo(self, conn: sqlite3.Connection) -> None:
+        """每日探测备忘:记录某 (scope, item_key) 当天已探测过,避免重复探测永久缺失数据"""
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS daily_probe_memo (
+                scope      TEXT NOT NULL,   -- 探测范围 (如 fin_missing:<table>、af_uncovered)
+                item_key   TEXT NOT NULL,   -- 探测条目 (如 <code>|<year>|<quarter> 或 <code>)
+                probe_date TEXT NOT NULL,   -- 最近探测日期 (YYYY-MM-DD, 本地日期)
+                PRIMARY KEY (scope, item_key)
+            )
+        """)
+
     def get_max_date(self, table: str, date_column: str = "date") -> str | None:
         conn = self.get_connection()
         cursor = conn.execute(f"SELECT MAX({date_column}) FROM {table}")
@@ -751,6 +763,9 @@ class DBManager:
 
         if "request_count" not in tables:
             self._create_request_count(conn)
+
+        if "daily_probe_memo" not in tables:
+            self._create_daily_probe_memo(conn)
 
         conn.commit()
 

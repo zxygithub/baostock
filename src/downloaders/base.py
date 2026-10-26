@@ -434,6 +434,32 @@ class BaseDownloader:
             return len(rows)
         return sum(1 for row in rows if row[date_idx] > last)
 
+    def is_probed_today(self, scope: str, item_key: str) -> bool:
+        """返回该 (scope, item_key) 今天是否已探测过（probe_date 为今日）。
+
+        日期必须用 Python 本地 date.today()，勿用 SQLite date('now')（UTC 会漂移）。
+        """
+        from datetime import date
+
+        today = date.today().isoformat()
+        row = self.conn.execute(
+            "SELECT probe_date FROM daily_probe_memo WHERE scope = ? AND item_key = ?",
+            (scope, item_key),
+        ).fetchone()
+        return row is not None and row[0] == today
+
+    def mark_probed(self, scope: str, item_key: str) -> None:
+        """UPSERT 今日探测备忘并立即 commit（隔离于调用方的批量事务）。"""
+        from datetime import date
+
+        today = date.today().isoformat()
+        self.conn.execute(
+            "INSERT INTO daily_probe_memo (scope, item_key, probe_date) VALUES (?, ?, ?) "
+            "ON CONFLICT(scope, item_key) DO UPDATE SET probe_date = excluded.probe_date",
+            (scope, item_key, today),
+        )
+        self.conn.commit()
+
     def get_max_date(self, table: str, date_column: str = "date") -> str | None:
         try:
             cursor = self.conn.execute(f"SELECT MAX({date_column}) FROM {table}")
