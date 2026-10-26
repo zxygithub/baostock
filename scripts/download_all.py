@@ -91,7 +91,8 @@ def refresh_meta_if_due(force: bool, logger=None) -> bool:
     return True
 
 
-def main():
+def main() -> int:
+    """跑一趟 Phase 2~11，返回本趟新增行数（趟次调度据此判定是否立即下一趟）。"""
     parser = argparse.ArgumentParser(description="BaoStock full data download")
     parser.add_argument("--start-date", default=None)
     parser.add_argument("--end-date", default=None)
@@ -116,6 +117,9 @@ def main():
     cfg = load_config()
 
     logger.info("=== BaoStock Full Data Download ===")
+
+    # 本趟各阶段"此前不在库中的真实新增行"累加（元数据/宏观/成分不计，恒为 0）
+    new_rows = 0
 
     from datetime import datetime, timedelta
 
@@ -155,26 +159,28 @@ def main():
 
     if is_past_shutdown_time():
         logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
-        return
+        return new_rows
 
     if not args.skip_macro and is_download_enabled("macro"):
         logger.info("Phase 4: Downloading macroeconomic data...")
         with MacroDownloader(str(DB_PATH), logger) as dl:
             macro_results = dl.download_all_macro()
+        new_rows += dl.new_rows
         logger.info(f"Macro: {macro_results}")
 
     if is_past_shutdown_time():
         logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
-        return
+        return new_rows
 
     logger.info("Phase 5: Downloading index constituents...")
     with ComponentDownloader(str(DB_PATH), logger) as dl:
         comp_results = dl.download_all_components()
+    new_rows += dl.new_rows
     logger.info(f"Components: {comp_results}")
 
     if is_past_shutdown_time():
         logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
-        return
+        return new_rows
 
     if kline_end_date:
         if is_download_enabled("index_kline"):
@@ -184,6 +190,7 @@ def main():
                     start_date=args.start_date or get_index_kline_start_date(),
                     end_date=args.end_date or kline_end_date,
                 )
+            new_rows += dl.new_rows
             logger.info(f"Index K-line: {idx_results}")
 
         if not args.skip_kline and is_download_enabled("kline", "daily"):
@@ -248,6 +255,7 @@ def main():
                         logger.info(f"Skipping monthly K-line (latest: {latest_monthly.strftime('%Y-%m-%d')}, {len(trading_days_so_far)} trading days into month).")
                 if not dl._interrupted:
                     dl.clear_checkpoint(ckpt_path)
+            new_rows += dl.new_rows
             logger.info(f"Stock K-line: {kline_results}")
 
             if not args.skip_minute and is_download_enabled("kline", "minute"):
@@ -260,23 +268,25 @@ def main():
                             start_date=args.start_date or get_kline_start_date("minute"),
                         )
                         logger.info(f"  {freq}min: {count} rows")
+                new_rows += dl.new_rows
     else:
         logger.info("Skipping Phase 6-8 (K-line) due to no trading day found.")
 
     if is_past_shutdown_time():
         logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
-        return
+        return new_rows
 
     if not args.skip_financial and is_download_enabled("financial"):
         logger.info("Phase 9: Downloading financial data...")
         fin_year = args.financial_start_year or get_financial_start_year()
         with FinancialDownloader(str(DB_PATH), logger) as dl:
             fin_results = dl.download_all_financial(codes, start_year=fin_year)
+        new_rows += dl.new_rows
         logger.info(f"Financial: {fin_results}")
 
     if is_past_shutdown_time():
         logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
-        return
+        return new_rows
 
     if not args.skip_reports and is_download_enabled("reports"):
         logger.info("Phase 10: Downloading company reports...")
@@ -286,16 +296,18 @@ def main():
                 start_date=args.start_date or get_reports_start_date(),
                 end_date=args.end_date or (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"),
             )
+        new_rows += dl.new_rows
         logger.info(f"Reports: {report_results}")
 
     if is_past_shutdown_time():
         logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
-        return
+        return new_rows
 
     if not args.skip_dividend and is_download_enabled("dividend"):
         logger.info("Phase 11: Downloading dividend and adjust factor...")
         with DividendDownloader(str(DB_PATH), logger) as dl:
             div_results = dl.download_all_dividend(codes)
+        new_rows += dl.new_rows
         logger.info(f"Dividend: {div_results}")
 
     if args.validate:
@@ -312,7 +324,9 @@ def main():
             for table, count in summary.items():
                 logger.info(f"  {table}: {count} rows")
 
+    logger.info(f"本趟新增数据行: {new_rows}")
     logger.info("=== Download Complete ===")
+    return new_rows
 
 
 if __name__ == "__main__":

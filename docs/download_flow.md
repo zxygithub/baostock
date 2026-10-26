@@ -22,6 +22,7 @@
                        ▼
 ┌─────────────────────────────────────────────────────────┐
 │ Phase 2: 元数据下载 (MetaDownloader)                     │
+│ 每日首趟一次(标记 data/.meta_fetched_YYYY-MM-DD)         │
 │                                                         │
 │  1. trade_dates           ← query_trade_dates()          │
 │  2. stock_basic           ← query_stock_basic()          │
@@ -84,9 +85,11 @@
    │ 跳过 Phase 6-8   │   │ Phase 6: 指数K线              │
    │ 直接去财务更新    │   │ (IndexDownloader)            │
    │                  │   │ 8个指数 × 3频率 (日/周/月)    │
+   │                  │   │ 按 code 增量: max(date)>=end  │
+   │                  │   │  跳过,否则从 max(date) 续拉   │
    │                  │   │ start = 配置起始日期           │
    │                  │   │ end   = kline_end_date         │
-   │                  │   │ API: ~24 次                   │
+   │                  │   │ API: 首趟 ~24,之后增量≈0      │
    └──────────────────┘   └──────────────┬───────────────┘
                                          │
                                          ▼
@@ -94,6 +97,7 @@
                                 │ Phase 7: 股票K线         │
                                 │ (KlineDownloader)       │
                                 │ end = kline_end_date    │
+                                │ 退市股自愈跳过(out_date)│
                                 │                         │
                                 │ ┌─ 日线 (adj=1,2,3) ─┐  │
                                 │ │ batch=200, sleep=2s│  │
@@ -197,9 +201,12 @@
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────┐
-│                     下载完成                              │
+│             本趟结束 (main 返回本趟新增行数)              │
 │  • 清理 checkpoint 文件                                  │
-│  • 输出各阶段下载统计                                    │
+│  • 输出各阶段下载统计与"本趟新增数据行: N"               │
+│  • 有新增 → 立即下一趟                                    │
+│  • 无新增 → 休眠 90 分钟后复检(分段心跳)                  │
+│  • 23:55 / 请求上限 → 终结发日报(--once 则直接退出)       │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -315,6 +322,7 @@
 - 元数据量小，采用最简单的 **DROP TABLE → CREATE TABLE → INSERT** 全量替换策略
 - 不做差异比较，每次都是整表重写
 - `if_exists="replace"` 走的是 pandas `to_sql(if_exists="replace")` 路径
+- 趟次调度模式（download_all.py）下每日只在首趟执行：`data/.meta_fetched_YYYY-MM-DD` 标记存在则跳过，成功后落盘；`--force-meta` 强制刷新（供排障）。增量更新（update_daily.py）不受该标记约束
 
 ---
 
@@ -354,16 +362,16 @@
 
 | 表 | 下载策略 | 保存模式 | 去重策略 | 更新策略 |
 |---|---|---|---|---|
-| `index_daily` | 8指数 × 日线，start_date ~ kline_end_date | **upsert** | 无预检查 | 配置起始日期，截止最近交易日 |
-| `index_weekly` | 8指数 × 周线，start_date ~ kline_end_date | **upsert** | 无预检查 | 配置起始日期，截止最近交易日 |
-| `index_monthly` | 8指数 × 月线，start_date ~ kline_end_date | **upsert** | 无预检查 | 配置起始日期，截止最近交易日 |
+| `index_daily` | 8指数 × 日线，按 code 增量 | **upsert** | **per-code**: `max(date) >= end` 跳过 | 增量，起点 = max(配置起始, max(date)) |
+| `index_weekly` | 8指数 × 周线，按 code 增量 | **upsert** | **per-code**: `max(date) >= end` 跳过 | 同上 |
+| `index_monthly` | 8指数 × 月线，按 code 增量 | **upsert** | **per-code**: `max(date) >= end` 跳过 | 同上 |
 
 **说明:**
-- `start_date` 来自 `get_index_kline_start_date()` 配置，非数据库 MAX(date)
+- `start_date` 来自 `get_index_kline.start_date` 配置，但实际起点为 `max(配置起始日, 库内 max(date))`（按 code + 频率增量）
 - `end_date` = `kline_end_date`（最近交易日，全量下载）或数据库 MAX(date)+1（增量更新）
-- 每次重新拉取整个配置日期范围，通过 upsert 去重
-- 不做 per-code 的增量检查
-- 每个指数间 sleep(batch_sleep)
+- 库内 `max(date) >= end_date` 的 code 直接跳过，0 请求；空转趟 8 指数 × 3 频率全部命中跳过
+- `index_weekly/monthly` 不带 adjustflag 取该 code 全表 max(date) 作为增量起点（起点宁早勿晚，多拉的行由 upsert 幂等吸收）
+- 仍通过 upsert 去重；每个指数间 sleep(batch_sleep)
 
 ---
 
@@ -385,6 +393,13 @@ last = get_last_downloaded(table, code, adjustflag=adjustflag)  # 含复权过�
 actual_start = max(start_date, last) if last else start_date
 if last and last >= end_date: continue    # 已完成则跳过
 ```
+
+**退市股自愈跳过（永久跳过条件）:**
+```
+skip iff stock_out and stock_out <= end_date and last >= stock_out
+```
+- `stock_out` 来自 `stock_basic.out_date`；退市前数据有缺口（`last < out_date`）时仍增量拉取，补到 `out_date` 后永久跳过（自愈）
+- 退市且完整的股票每趟 0 请求（此前每趟重复拉取约 340 只退市股 × 3 复权）
 
 **断点续传逻辑 (日线/周线/月线均支持):**
 ```
@@ -482,6 +497,7 @@ for code, year, quarter in all_combinations:
 - **最激进的去重策略**：预扫描全表，只下载缺失的 (code, year, quarter) 组合
 - 无断点续传，但重跑时 API 调用量最小化
 - 批量刷新，每 500 个 DataFrame 提交一次
+- 财务缺失季度任务（查无数据的组合）经 `daily_probe_memo`（scope=`fin_missing:<表名>`）每日一探：任务执行后（无论是否返回行）标记当日已探，当天后续趟次不再重探，次日自动恢复
 
 ---
 
@@ -512,6 +528,7 @@ for code, year, quarter in all_combinations:
 - 增量更新时仅下载当年 (`current_year`) 数据
 - `download_all_dividend` 支持传入 `start_year/end_year` 和 `start_date/end_date`
 - `_api_call` 包装 BaoStock API，自动递增请求计数
+- 复权因子"分红事件未覆盖"的股票（scope=`af_uncovered`）经 `daily_probe_memo` 每日一探，次日恢复；"当日未刷新"分支维持每日全量刷新（既有设计，不改）
 
 ---
 
@@ -682,10 +699,37 @@ for code, year, quarter in all_combinations:
 | `financial.start_year` | 2007 | config.yaml | 财务数据起始年份 |
 | `reports.start_date` | 2003-01-01 | config.yaml | 公司报告起始日期 |
 | `index_kline.start_date` | 2006-01-01 | config.yaml | 指数 K 线起始日期 |
+| `download.idle_pass_interval_minutes` | 90 | config.yaml | 无新增趟次间的休眠分钟数 |
 | `FINANCIAL_SLEEP` | 0.5 | src/config.py | 财务数据每次调用间隔 |
 | `LOGIN_REFRESH_INTERVAL` | 900 | src/config.py | 会话刷新间隔（15分钟） |
 | `MAX_RETRIES` | 3 | src/config.py | 查询失败重试次数 |
 
+## 10. 趟次调度与新增行计数（full 常驻模式）
+
+`download_all.py` 由 `run_main_with_report(main, loop=True)` 驱动；`--once` 时 `loop=False` 只跑一趟即退出，`./start.sh update` 保持单趟语义。
+
+```
+loop:
+  new_rows = main()            # 一趟 = Phase 2~11,返回本趟新增行数
+  SystemExit(1)       → 终结:达到每日请求上限,发日报
+  已过 23:55          → 终结:达到每日停止时间,发日报
+  new_rows > 0       → 立即下一趟(数据还在来)
+  否则                → 休眠 90 分钟后复检
+```
+
+- `main()` 返回值为本趟新增行数（写库前精确判重，非拉取行数）；每趟收尾打一行 `本趟新增数据行: N`
+- 休眠按 ≤5 分钟分段，每段写"休眠心跳"日志并醒来检查 23:55——静默长睡会被 monitor 的 15 分钟日志静默阈值误判为卡死
+- 休眠间隔 `download.idle_pass_interval_minutes`（默认 90），非正值钳位到 1 分钟防热循环
+
+**新增行计数规则（生产性判定）：**
+
+| 数据 | 计数规则 |
+|---|---|
+| 股票/指数 K 线 | `date > 查询前 max(date)` 的行数（退市股补缺的旧行不计） |
+| 财务缺失季度 | 任务生成时经 LEFT JOIN 确认库中缺失，返回行数即新增 |
+| 报表/分红/复权因子 | 保存前对表主键 LEFT JOIN 判重，存量行不计 |
+| 元数据、宏观、指数成分 | 恒为 0（维护性全量小表，不作为"数据在来"信号） |
+
 ---
 
-*文档最后更新：2026年6月27日*
+*文档最后更新：2026年10月26日*
