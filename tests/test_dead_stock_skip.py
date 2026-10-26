@@ -91,6 +91,20 @@ def test_delisted_and_complete_skips_query(monkeypatch, tmp_path):
     }
 
 
+def test_delisted_before_window_start_skips_query(monkeypatch, tmp_path):
+    dl = _make_dl(tmp_path)
+    queries, total = _run(
+        dl, monkeypatch,
+        codes=["A"],
+        start_date="2019-01-02",
+        end_date=None,
+        ipo_dates={"A": (None, "2015-06-30")},
+        last={"A": None},
+    )
+
+    assert queries == []
+
+
 def test_delisted_with_gap_still_fetches(monkeypatch, tmp_path):
     dl = _make_dl(tmp_path)
     queries, total = _run(

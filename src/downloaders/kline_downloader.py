@@ -61,6 +61,9 @@ class KlineDownloader(BaseDownloader):
                     stock_out = ipo_dates[code][1]
 
                 effective_end = end_date or "9999-99-99"
+                effective_start = max(start_date, stock_ipo) if stock_ipo else start_date
+                if stock_out and stock_out < effective_start:
+                    continue
                 if stock_out and stock_out <= effective_end and last and last >= stock_out:
                     self._checkpoint_data = {
                         "table": table,
@@ -69,7 +72,6 @@ class KlineDownloader(BaseDownloader):
                     }
                     continue
 
-                effective_start = max(start_date, stock_ipo) if stock_ipo else start_date
                 actual_start = max(effective_start, last) if last else effective_start
                 if last and last >= effective_end:
                     self._checkpoint_data = {
