@@ -27,22 +27,28 @@ class IndexDownloader(BaseDownloader):
         if start_date is None:
             start_date = get_index_kline_start_date()
 
+        date_idx = INDEX_DAILY_FIELDS.split(",").index("date")
         total_rows = 0
         batch_sleep = get_batch_sleep()
         for code in tqdm(codes, desc="Index daily"):
             if self._interrupted:
                 break
+            last = self.get_last_downloaded("index_daily", code)
+            if end_date is not None and last and last >= end_date:
+                continue
+            actual_start = max(start_date, last) if last else start_date
             rs = self.query_with_retry(
                 bs.query_history_k_data_plus,
                 code=code,
                 fields=INDEX_DAILY_FIELDS,
-                start_date=start_date,
+                start_date=actual_start,
                 end_date=end_date,
                 frequency="d",
             )
             rows = fetch_all_rows(rs)
             if not rows:
                 continue
+            self.new_rows += self.count_new_by_date(rows, date_idx, last)
             df = pd.DataFrame(rows, columns=INDEX_DAILY_FIELDS.split(","))
             df = df.rename(columns=RENAME_KLINE)
             self.save_df(df, "index_daily", if_exists="upsert")
@@ -61,22 +67,28 @@ class IndexDownloader(BaseDownloader):
         if start_date is None:
             start_date = get_index_kline_start_date()
 
+        date_idx = INDEX_WEEKLY_MONTHLY_FIELDS.split(",").index("date")
         total_rows = 0
         batch_sleep = get_batch_sleep()
         for code in tqdm(codes, desc="Index weekly"):
             if self._interrupted:
                 break
+            last = self.get_last_downloaded("index_weekly", code)
+            if end_date is not None and last and last >= end_date:
+                continue
+            actual_start = max(start_date, last) if last else start_date
             rs = self.query_with_retry(
                 bs.query_history_k_data_plus,
                 code=code,
                 fields=INDEX_WEEKLY_MONTHLY_FIELDS,
-                start_date=start_date,
+                start_date=actual_start,
                 end_date=end_date,
                 frequency="w",
             )
             rows = fetch_all_rows(rs)
             if not rows:
                 continue
+            self.new_rows += self.count_new_by_date(rows, date_idx, last)
             df = pd.DataFrame(rows, columns=INDEX_WEEKLY_MONTHLY_FIELDS.split(","))
             df = df.rename(columns=RENAME_KLINE)
             self.save_df(df, "index_weekly", if_exists="upsert")
@@ -95,22 +107,28 @@ class IndexDownloader(BaseDownloader):
         if start_date is None:
             start_date = get_index_kline_start_date()
 
+        date_idx = INDEX_WEEKLY_MONTHLY_FIELDS.split(",").index("date")
         total_rows = 0
         batch_sleep = get_batch_sleep()
         for code in tqdm(codes, desc="Index monthly"):
             if self._interrupted:
                 break
+            last = self.get_last_downloaded("index_monthly", code)
+            if end_date is not None and last and last >= end_date:
+                continue
+            actual_start = max(start_date, last) if last else start_date
             rs = self.query_with_retry(
                 bs.query_history_k_data_plus,
                 code=code,
                 fields=INDEX_WEEKLY_MONTHLY_FIELDS,
-                start_date=start_date,
+                start_date=actual_start,
                 end_date=end_date,
                 frequency="m",
             )
             rows = fetch_all_rows(rs)
             if not rows:
                 continue
+            self.new_rows += self.count_new_by_date(rows, date_idx, last)
             df = pd.DataFrame(rows, columns=INDEX_WEEKLY_MONTHLY_FIELDS.split(","))
             df = df.rename(columns=RENAME_KLINE)
             self.save_df(df, "index_monthly", if_exists="upsert")
