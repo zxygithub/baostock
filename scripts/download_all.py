@@ -1,6 +1,8 @@
 import sys
 import argparse
+import logging
 import pandas as pd
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -53,6 +55,42 @@ def _get_stock_codes(db_path: Path, codes_file: str | None = None, logger=None):
     return codes
 
 
+def meta_marker_path() -> Path:
+    """Today's metadata-refresh marker (same convention as `.report_sent_*`)."""
+    return DB_PATH.parent / f".meta_fetched_{date.today():%Y-%m-%d}"
+
+
+def should_refresh_meta(force: bool = False) -> bool:
+    """Phase 2 gate: metadata refreshes at most once per calendar day.
+
+    Returns True when --force-meta was passed or today's marker file is
+    absent. The marker is written only after download_all_metadata()
+    completes, so a failed pass retries on the next pass.
+    """
+    if force:
+        return True
+    return not meta_marker_path().exists()
+
+
+def refresh_meta_if_due(force: bool, logger=None) -> bool:
+    """Run Phase 2 (metadata) only when due; write today's marker on success.
+
+    Returns True if the download ran, False if it was skipped.
+    """
+    log = logger or logging.getLogger("baostock")
+    if not should_refresh_meta(force):
+        log.info(
+            f"Phase 2: metadata already fetched today ({meta_marker_path().name}), skipping."
+        )
+        return False
+    log.info("Phase 2: Downloading metadata...")
+    with MetaDownloader(str(DB_PATH), logger) as dl:
+        meta_results = dl.download_all_metadata()
+    log.info(f"Metadata: {meta_results}")
+    meta_marker_path().touch()
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description="BaoStock full data download")
     parser.add_argument("--start-date", default=None)
@@ -70,6 +108,8 @@ def main():
     )
     parser.add_argument("--config", default=None, help="Path to config.yaml")
     parser.add_argument("--log-file", default=None, help="Path to log file")
+    parser.add_argument("--once", action="store_true", help="只跑一趟即退出")
+    parser.add_argument("--force-meta", action="store_true", help="强制刷新元数据")
     args = parser.parse_args()
 
     logger = setup_logging("baostock", args.log_file)
@@ -109,10 +149,7 @@ def main():
     else:
         logger.info(f"No trading day found on or before {target_date}. Skipping K-line download.")
 
-    logger.info("Phase 2: Downloading metadata...")
-    with MetaDownloader(str(DB_PATH), logger) as dl:
-        meta_results = dl.download_all_metadata()
-    logger.info(f"Metadata: {meta_results}")
+    refresh_meta_if_due(args.force_meta, logger)
 
     codes = _get_stock_codes(DB_PATH, args.codes_file, logger)
 
@@ -279,4 +316,4 @@ def main():
 
 
 if __name__ == "__main__":
-    run_main_with_report(main)
+    run_main_with_report(main, loop="--once" not in sys.argv)
