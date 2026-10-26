@@ -51,11 +51,11 @@
 ### Task 1: 新增行计数基础设施(`BaseDownloader`)
 
 **Files:**
-- Modify: `src/downloaders/base.py`(`__init__`、新增 `count_new_rows`)
+- Modify: `src/downloaders/base.py`(`__init__`、新增 `count_new_rows`、`count_new_by_date`)
 - Test: `tests/test_count_new_rows.py`(新建)
 
 **Interfaces:**
-- Produces: `BaseDownloader.new_rows: int`(实例属性,初值 0);`BaseDownloader.count_new_rows(self, df: pd.DataFrame, table: str, key_cols: list[str]) -> int` —— 返回 `df` 中主键组合 `(key_cols...)` 在 `table` 里不存在的行数;`df` 为空返回 0;`key_cols` 任一列值为 `'9999-01-01'` 的行(占位行)不计。
+- Produces: `BaseDownloader.new_rows: int`(实例属性,初值 0);`BaseDownloader.count_new_rows(self, df: pd.DataFrame, table: str, key_cols: list[str]) -> int` —— 返回 `df` 中主键组合 `(key_cols...)` 在 `table` 里不存在的行数;`df` 为空返回 0;`key_cols` 任一列值为 `'9999-01-01'` 的行(占位行)不计;`BaseDownloader.count_new_by_date(self, rows: list[list], date_idx: int, last: str | None) -> int` —— 返回 `rows` 中日期列(`date_idx`)严格大于 `last` 的行数,`last is None` 时全计(K 线与指数共用,避免逐字重复;pre-flight 裁定 R1)。
 - 后续任务依赖:`self.new_rows` 累加语义 = "此前不在库中的真实数据行"。
 
 - [ ] **Step 1: 写失败测试**
@@ -98,8 +98,8 @@ git commit -m "feat: BaseDownloader 新增行精确计数基础设施"
 - Test: `tests/test_dead_stock_skip.py`(新建)
 
 **Interfaces:**
-- Consumes: Task 1 的 `self.new_rows`;现有 `get_last_downloaded(table, code, adjustflag=...)`、`ipo_dates: dict[str, tuple[str|None, str|None]]`。
-- Produces: 跳过规则(设计组件 1):`effective_end = end_date or "9999-99-99"`,**skip iff `stock_out and stock_out <= effective_end and last and last >= stock_out`**;被跳过时与现有 `last >= end_date` 分支一样先写 `self._checkpoint_data` 再 `continue`。K 线计数:`date_idx = fields.split(",").index("date")`,每 code 查询后 `self.new_rows += sum(1 for r in rows if last is None or r[date_idx] > last)`。
+- Consumes: Task 1 的 `self.new_rows` 与 `count_new_by_date`;现有 `get_last_downloaded(table, code, adjustflag=...)`、`ipo_dates: dict[str, tuple[str|None, str|None]]`。
+- Produces: 跳过规则(设计组件 1):`effective_end = end_date or "9999-99-99"`,**skip iff `stock_out and stock_out <= effective_end and last and last >= stock_out`**;被跳过时与现有 `last >= end_date` 分支一样先写 `self._checkpoint_data` 再 `continue`。K 线计数:`date_idx = fields.split(",").index("date")`,每 code 查询后 `self.new_rows += self.count_new_by_date(rows, date_idx, last)`。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -183,8 +183,8 @@ git commit -m "feat: daily_probe_memo 探测备忘表与 helper"
 - Test: `tests/test_index_kline_incremental.py`(新建)
 
 **Interfaces:**
-- Consumes: `get_last_downloaded(table, code)`(不带 adjustflag;`index_weekly/monthly` 含 adjustflag 列也按全表 max 取,设计组件 3 已裁定)、Task 1 的 `self.new_rows`。
-- Produces: 每 code:`last >= end_date`(end_date 非空时)→ 跳过;否则 `actual_start = max(start_date, last) if last else start_date`;计数同 K 线 `sum(1 for r in rows if last is None or r[date_idx] > last)`。方法签名不变。
+- Consumes: `get_last_downloaded(table, code)`(不带 adjustflag;`index_weekly/monthly` 含 adjustflag 列也按全表 max 取,设计组件 3 已裁定)、Task 1 的 `self.new_rows` 与 `count_new_by_date`。
+- Produces: 每 code:`last >= end_date`(end_date 非空时)→ 跳过;否则 `actual_start = max(start_date, last) if last else start_date`;计数 `self.new_rows += self.count_new_by_date(rows, date_idx, last)`。方法签名不变。
 
 - [ ] **Step 1: 写失败测试**
 
