@@ -47,6 +47,12 @@ def downloader_factory(tmp_path):
         # downloader will use, so schemas match what the methods expect.
         for ddl in table_ddl.values():
             dl.conn.execute(ddl)
+        # _find_missing_quarters/_find_stale_adjust_factor 现在会反联探测备忘表
+        dl.conn.execute(
+            "CREATE TABLE IF NOT EXISTS daily_probe_memo ("
+            "scope TEXT NOT NULL, item_key TEXT NOT NULL, probe_date TEXT NOT NULL, "
+            "PRIMARY KEY (scope, item_key))"
+        )
         dl.conn.commit()
         return dl
 

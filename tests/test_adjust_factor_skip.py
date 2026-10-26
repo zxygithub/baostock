@@ -24,6 +24,11 @@ DIVIDEND_DDL = (
     "code TEXT, divid_operate_date TEXT, year INTEGER, year_type TEXT, "
     "PRIMARY KEY (code, divid_operate_date, year, year_type))"
 )
+DAILY_PROBE_DDL = (
+    "CREATE TABLE daily_probe_memo ("
+    "scope TEXT NOT NULL, item_key TEXT NOT NULL, probe_date TEXT NOT NULL, "
+    "PRIMARY KEY (scope, item_key))"
+)
 
 
 class FakeResult:
@@ -43,6 +48,7 @@ def _make_dl(tmp_path):
     dl.logger = logging.getLogger("test_adjust_skip")
     dl.conn.execute(ADJUST_DDL)
     dl.conn.execute(DIVIDEND_DDL)
+    dl.conn.execute(DAILY_PROBE_DDL)
     dl.conn.commit()
     return dl
 

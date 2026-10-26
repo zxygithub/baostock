@@ -12,6 +12,9 @@ from datetime import date, timedelta
 
 from src.db_manager import DBManager
 from src.downloaders.base import BaseDownloader
+from src.downloaders.financial_downloader import FinancialDownloader
+from src.downloaders.dividend_downloader import DividendDownloader
+import src.downloaders.financial_downloader as fin_mod
 
 
 def _make_dl(tmp_path):
@@ -105,3 +108,195 @@ def test_missing_table_recreated_on_migrate(tmp_path):
     finally:
         conn.close()
     assert "daily_probe_memo" in tables
+
+
+# ---------------------------------------------------------------------------
+# Task 5: 财务缺失季度 / 复权未覆盖事件 每日一探
+# ---------------------------------------------------------------------------
+
+
+def _make_fin_dl(tmp_path):
+    db_path = tmp_path / "fin_probe.db"
+    db = DBManager(str(db_path))
+    db.init_all_tables()
+    db.close()
+    dl = object.__new__(FinancialDownloader)
+    dl.db_path = db_path
+    dl._conn = None
+    dl._limit_exceeded = True
+    dl._interrupted = False
+    dl.logger = logging.getLogger("test_fin_probe")
+    dl.new_rows = 0
+    return dl
+
+
+def _make_div_dl(tmp_path):
+    db_path = tmp_path / "div_probe.db"
+    db = DBManager(str(db_path))
+    db.init_all_tables()
+    db.close()
+    dl = object.__new__(DividendDownloader)
+    dl.db_path = db_path
+    dl._conn = None
+    dl._limit_exceeded = True
+    dl._interrupted = False
+    dl.logger = logging.getLogger("test_div_probe")
+    return dl
+
+
+def _run_quarterly(dl, monkeypatch, table_name, codes, start_year, end_year,
+                   current, fields, rows, column_renames):
+    monkeypatch.setattr(fin_mod, "get_current_quarter", lambda: current)
+    monkeypatch.setattr(dl, "get_stock_years",
+                        lambda c, s, e: {x: (s, e) for x in c})
+    monkeypatch.setattr(dl, "get_stock_out_dates",
+                        lambda: {x: None for x in codes})
+    monkeypatch.setattr(fin_mod, "FINANCIAL_SLEEP", 0)
+
+    FakeRs = type("FakeRs", (), {"fields": fields})
+
+    monkeypatch.setattr(dl, "query_with_retry", lambda func, **kw: FakeRs())
+    monkeypatch.setattr(fin_mod, "fetch_all_rows", lambda rs: rows)
+    return dl._download_quarterly_data(
+        codes=codes,
+        query_func=lambda **kw: None,
+        column_renames=column_renames,
+        table_name=table_name,
+        start_year=start_year,
+        end_year=end_year,
+    )
+
+
+def test_fin_missing_probed_once_per_day(tmp_path, monkeypatch):
+    dl = _make_fin_dl(tmp_path)
+
+    _run_quarterly(
+        dl, monkeypatch, "profit_data", ["sh.600000"], 2024, 2024,
+        (2024, 3), ["statDate"], [], {"statDate": "stat_date"},
+    )
+
+    # 空结果（recent-year 无占位行）任务当日已探，第二趟不再出现
+    assert dl.is_probed_today("fin_missing:profit_data", "sh.600000|2024|1")
+    tasks, skipped = dl._find_missing_quarters(
+        "profit_data", [("sh.600000", 2024, 1)]
+    )
+    assert tasks == []
+    assert skipped == 1
+
+
+def test_fin_missing_reprobed_next_day(tmp_path):
+    dl = _make_fin_dl(tmp_path)
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+
+    dl.mark_probed("fin_missing:profit_data", "sh.600000|2024|1")
+    dl.conn.execute(
+        "UPDATE daily_probe_memo SET probe_date = ? "
+        "WHERE scope = ? AND item_key = ?",
+        (yesterday, "fin_missing:profit_data", "sh.600000|2024|1"),
+    )
+    dl.conn.commit()
+
+    tasks, skipped = dl._find_missing_quarters(
+        "profit_data", [("sh.600000", 2024, 1)]
+    )
+    assert tasks == [("sh.600000", 2024, 1)]
+    assert skipped == 0
+
+
+def test_fin_missing_not_marked_on_error(tmp_path, monkeypatch):
+    dl = _make_fin_dl(tmp_path)
+    monkeypatch.setattr(fin_mod, "get_current_quarter", lambda: (2024, 3))
+    monkeypatch.setattr(dl, "get_stock_years",
+                        lambda c, s, e: {x: (s, e) for x in c})
+    monkeypatch.setattr(dl, "get_stock_out_dates",
+                        lambda: {x: None for x in ["sh.600000"]})
+    monkeypatch.setattr(fin_mod, "FINANCIAL_SLEEP", 0)
+
+    def boom(func, **kw):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(dl, "query_with_retry", boom)
+
+    dl._download_quarterly_data(
+        codes=["sh.600000"],
+        query_func=lambda **kw: None,
+        column_renames={"statDate": "stat_date"},
+        table_name="profit_data",
+        start_year=2024,
+        end_year=2024,
+    )
+
+    # RuntimeError 路径不 mark，下趟仍在
+    assert dl.is_probed_today("fin_missing:profit_data", "sh.600000|2024|1") is False
+    tasks, _ = dl._find_missing_quarters(
+        "profit_data", [("sh.600000", 2024, 1)]
+    )
+    assert tasks == [("sh.600000", 2024, 1)]
+
+
+def test_fin_missing_counts_new_rows(tmp_path, monkeypatch):
+    dl = _make_fin_dl(tmp_path)
+
+    total = _run_quarterly(
+        dl, monkeypatch, "profit_data", ["sh.600000"], 2024, 2024,
+        (2024, 3), ["code", "statDate"],
+        [["sh.600000", "2024-03-31"]], {"statDate": "stat_date"},
+    )
+
+    assert total == 1
+    assert dl.new_rows == 1
+
+
+def test_af_uncovered_probed_once_per_day(tmp_path):
+    dl = _make_div_dl(tmp_path)
+    today = date.today().isoformat()
+
+    # 第一分支排除：已有今日刷新的复权行（另一除权日）
+    dl.conn.execute(
+        "INSERT OR REPLACE INTO adjust_factor VALUES (?,?,?,?,?,?)",
+        ("A", "2020-01-01", 1.0, 2.0, 2.0, f"{today} 05:00:00"),
+    )
+    # 第二分支命中：未被复权因子覆盖的除权事件
+    dl.conn.execute(
+        "INSERT INTO dividend (code, divid_operate_date, year, year_type) "
+        "VALUES (?,?,?,?)",
+        ("A", "2025-06-30", 2025, "operate"),
+    )
+    dl.conn.commit()
+
+    stale, _ = dl._find_stale_adjust_factor(["A"], today)
+    assert stale == ["A"]
+
+    dl.mark_probed("af_uncovered", "A")
+
+    stale2, skipped2 = dl._find_stale_adjust_factor(["A"], today)
+    assert stale2 == []
+    assert skipped2 == 1
+
+
+def test_af_uncovered_reprobed_next_day(tmp_path):
+    dl = _make_div_dl(tmp_path)
+    today = date.today().isoformat()
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+
+    dl.conn.execute(
+        "INSERT OR REPLACE INTO adjust_factor VALUES (?,?,?,?,?,?)",
+        ("A", "2020-01-01", 1.0, 2.0, 2.0, f"{today} 05:00:00"),
+    )
+    dl.conn.execute(
+        "INSERT INTO dividend (code, divid_operate_date, year, year_type) "
+        "VALUES (?,?,?,?)",
+        ("A", "2025-06-30", 2025, "operate"),
+    )
+    dl.conn.commit()
+
+    dl.mark_probed("af_uncovered", "A")
+    dl.conn.execute(
+        "UPDATE daily_probe_memo SET probe_date = ? "
+        "WHERE scope = 'af_uncovered' AND item_key = ?",
+        (yesterday, "A"),
+    )
+    dl.conn.commit()
+
+    stale, _ = dl._find_stale_adjust_factor(["A"], today)
+    assert stale == ["A"]

@@ -2,7 +2,7 @@ import baostock as bs
 import pandas as pd
 import logging
 import time
-from datetime import datetime
+from datetime import date, datetime
 from tqdm import tqdm
 
 from src.downloaders.base import BaseDownloader
@@ -114,6 +114,9 @@ class FinancialDownloader(BaseDownloader):
             except RuntimeError:
                 continue
             rows = fetch_all_rows(rs)
+            # 探测成功（含空结果）：记下"今日已探"，永久缺失季度不再每趟重探；
+            # RuntimeError 路径已在上面 continue，不 mark，留给下一趟重试。
+            self.mark_probed(f"fin_missing:{table_name}", f"{code}|{year}|{quarter}")
             if not rows:
                 if year not in recent_years:
                     df = pd.DataFrame(
@@ -132,6 +135,7 @@ class FinancialDownloader(BaseDownloader):
             df["quarter"] = quarter
             self._batch_dfs.append(df)
             total_rows += len(df)
+            self.new_rows += len(df)
             time.sleep(FINANCIAL_SLEEP)
 
             if len(self._batch_dfs) >= BATCH_FLUSH:
@@ -150,9 +154,13 @@ class FinancialDownloader(BaseDownloader):
         self,
         table_name: str,
         candidates: list[tuple[str, int, int]],
+        today: str | None = None,
     ) -> tuple[list[tuple[str, int, int]], int]:
         if not candidates:
             return [], 0
+        if today is None:
+            today = date.today().isoformat()
+        scope = f"fin_missing:{table_name}"
 
         self.conn.execute("DROP TABLE IF EXISTS _fin_candidates")
         self.conn.execute(
@@ -169,7 +177,13 @@ class FinancialDownloader(BaseDownloader):
             LEFT JOIN {table_name} t
                 ON c.code = t.code AND c.year = t.year AND c.quarter = t.quarter
             WHERE t.code IS NULL
-        """).fetchall()
+              AND NOT EXISTS (
+                  SELECT 1 FROM daily_probe_memo pm
+                  WHERE pm.scope = ?
+                    AND pm.item_key = c.code || '|' || c.year || '|' || c.quarter
+                    AND pm.probe_date >= ?
+              )
+        """, (scope, today)).fetchall()
         self.conn.execute("DROP TABLE _fin_candidates")
         # executemany INSERT 隐式开启了事务；若不关闭，遗留的读快照会让
         # close() 里的 wal_checkpoint(TRUNCATE) 抛 "database table is locked"

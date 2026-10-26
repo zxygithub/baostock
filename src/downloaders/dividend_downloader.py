@@ -215,7 +215,13 @@ class DividendDownloader(BaseDownloader):
             LEFT JOIN adjust_factor af
                 ON af.code = d.code AND af.divid_operate_date = d.divid_operate_date
             WHERE d.divid_operate_date != '9999-01-01' AND af.code IS NULL
-        """, (today,)).fetchall()
+              AND NOT EXISTS (
+                  SELECT 1 FROM daily_probe_memo pm
+                  WHERE pm.scope = 'af_uncovered'
+                    AND pm.item_key = c.code
+                    AND pm.probe_date >= ?
+              )
+        """, (today, today)).fetchall()
         self.conn.execute("DROP TABLE IF EXISTS _af_candidates")
         # 同 _find_missing_dividend：executemany 隐式事务不回滚会让 close() 的
         # wal_checkpoint(TRUNCATE) 抛 "database table is locked"
@@ -264,6 +270,9 @@ class DividendDownloader(BaseDownloader):
                 self.logger.warning(f"adjust_factor: skipping {code} after retries: {e}")
                 time.sleep(batch_sleep)
                 continue
+            # 探测成功（含空结果）：记下 af_uncovered 今日已探。全量历史刚拉过，
+            # 未覆盖事件确实已查，当日无需再为该 code 重探。
+            self.mark_probed("af_uncovered", code)
             if not rows:
                 self._mark_adjust_checked(code)
                 time.sleep(batch_sleep)
