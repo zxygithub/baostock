@@ -90,6 +90,7 @@ class BaseDownloader:
         self._login_time: float = 0
         self._interrupted: bool = False
         self._limit_exceeded: bool = False
+        self.new_rows: int = 0  # 累计"此前不在库中的真实数据行"（由调用方 += count_new_rows(...)）
         self._check_daily_limit()
         self.login()
 
@@ -368,6 +369,70 @@ class BaseDownloader:
         else:
             df.to_sql(table, self.conn, if_exists=if_exists, index=False)
             self.conn.commit()
+
+    def count_new_rows(
+        self, df: pd.DataFrame, table: str, key_cols: list[str]
+    ) -> int:
+        """返回 df 中主键组合 (key_cols...) 在 table 里不存在的行数。
+
+        占位行（任一 key 值为字面量 '9999-01-01'）恒不计。实现仿
+        FinancialDownloader._find_missing_quarters：临时表 + LEFT JOIN，
+        结尾必须 rollback（见该方法注释的 wal_checkpoint 锁库地雷）。
+        """
+        if df is None or df.empty:
+            return 0
+        if not key_cols:
+            raise ValueError("key_cols must not be empty")
+
+        placeholder = df[key_cols].astype(str).eq("9999-01-01").any(axis=1)
+        subset = df[~placeholder]
+        if subset.empty:
+            return 0
+
+        def _sql_param(v):
+            if pd.isna(v):
+                return None
+            return v.item() if hasattr(v, "item") else v
+
+        values = [
+            tuple(_sql_param(v) for v in row)
+            for row in subset[key_cols].itertuples(index=False, name=None)
+        ]
+
+        tmp_cols = ", ".join(f"c{i} TEXT" for i in range(len(key_cols)))
+        self.conn.execute("DROP TABLE IF EXISTS _count_new_rows_tmp")
+        self.conn.execute(
+            f"CREATE TEMP TABLE _count_new_rows_tmp ({tmp_cols})"
+        )
+        placeholders = ",".join("?" * len(key_cols))
+        self.conn.executemany(
+            f"INSERT INTO _count_new_rows_tmp VALUES ({placeholders})", values
+        )
+        join_cond = " AND ".join(
+            f't."{col}" = tmp.c{i}' for i, col in enumerate(key_cols)
+        )
+        count = self.conn.execute(f"""
+            SELECT COUNT(*) FROM _count_new_rows_tmp tmp
+            LEFT JOIN {table} t ON {join_cond}
+            WHERE t."{key_cols[0]}" IS NULL
+        """).fetchone()[0]
+        self.conn.execute("DROP TABLE _count_new_rows_tmp")
+        # executemany INSERT 隐式开启了事务；若不关闭，遗留的读快照会让
+        # close() 里的 wal_checkpoint(TRUNCATE) 抛 "database table is locked"
+        # （与 FinancialDownloader._find_missing_quarters 相同的地雷）。
+        self.conn.rollback()
+        return count
+
+    def count_new_by_date(
+        self, rows: list[list], date_idx: int, last: str | None
+    ) -> int:
+        """返回 rows 中日期列 (date_idx) 严格大于 last 的行数；last is None 时全计。
+
+        K 线与指数增量共用同一条计数规则，避免逐字重复（pre-flight 裁定 R1）。
+        """
+        if last is None:
+            return len(rows)
+        return sum(1 for row in rows if row[date_idx] > last)
 
     def get_max_date(self, table: str, date_column: str = "date") -> str | None:
         try:
