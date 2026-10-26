@@ -66,6 +66,9 @@ class ReportDownloader(BaseDownloader):
                 continue
             df = pd.DataFrame(rows, columns=rs.fields)
             df.rename(columns=RENAME_PERFORMANCE_EXPRESS, inplace=True)
+            # 计数必须在 save 之前：save 后这些行已入库，count 会误判为存量
+            self.new_rows += self.count_new_rows(
+                df, "performance_express", ["code", "performance_exp_pub_date"])
             self.save_df(df, "performance_express", if_exists="upsert")
             total_rows += len(df)
             time.sleep(batch_sleep)
@@ -116,6 +119,9 @@ class ReportDownloader(BaseDownloader):
                 continue
             df = pd.DataFrame(rows, columns=rs.fields)
             df.rename(columns=RENAME_FORECAST_REPORT, inplace=True)
+            # 计数必须在 save 之前：save 后这些行已入库，count 会误判为存量
+            self.new_rows += self.count_new_rows(
+                df, "forecast_report", ["code", "profit_forecast_exp_pub_date"])
             self.save_df(df, "forecast_report", if_exists="upsert")
             total_rows += len(df)
             time.sleep(batch_sleep)

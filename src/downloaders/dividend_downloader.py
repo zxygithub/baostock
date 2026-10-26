@@ -92,6 +92,10 @@ class DividendDownloader(BaseDownloader):
             columns = rs.fields + ["year", "year_type"]
             df = pd.DataFrame(all_rows, columns=columns)
             df.rename(columns=RENAME_DIVIDEND, inplace=True)
+            # 计数必须在 save 之前：save 后这些行已入库，count 会误判为存量。
+            # 占位批次（placeholder_dfs）在下方单独 flush，不经过这里，恒不计。
+            self.new_rows += self.count_new_rows(
+                df, "dividend", ["code", "divid_operate_date", "year", "year_type"])
             self.save_df(df, "dividend", if_exists="upsert")
             self.conn.execute(
                 "DELETE FROM dividend WHERE code = ? AND divid_operate_date = '9999-01-01' "
@@ -279,6 +283,10 @@ class DividendDownloader(BaseDownloader):
                 continue
             df = pd.DataFrame(rows, columns=rs.fields)
             df.rename(columns=RENAME_ADJUST_FACTOR, inplace=True)
+            # 计数必须在 save 之前：save 后这些行已入库，count 会误判为存量。
+            # _mark_adjust_checked 的 '9999-01-01' 探测占位走的是单独路径，不计。
+            self.new_rows += self.count_new_rows(
+                df, "adjust_factor", ["code", "divid_operate_date"])
             self.save_df(df, "adjust_factor", if_exists="upsert")
             self.conn.execute(
                 "DELETE FROM adjust_factor WHERE code = ? AND divid_operate_date = '9999-01-01'",

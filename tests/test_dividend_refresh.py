@@ -32,6 +32,7 @@ def _make_dl(tmp_path):
     dl._limit_exceeded = True
     dl._interrupted = False
     dl.logger = logging.getLogger("test_dividend_refresh")
+    dl.new_rows = 0
     dl.conn.execute(DIVIDEND_DDL)
     dl.conn.commit()
     return dl
