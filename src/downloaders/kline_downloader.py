@@ -39,6 +39,7 @@ class KlineDownloader(BaseDownloader):
         skipping = bool(resume_from)
         batch_size = get_batch_size()
         batch_sleep = get_batch_sleep()
+        date_idx = fields.split(",").index("date")
 
         for batch in batch_iterable(codes, batch_size):
             all_rows = []
@@ -59,12 +60,18 @@ class KlineDownloader(BaseDownloader):
                     stock_ipo = ipo_dates[code][0]
                     stock_out = ipo_dates[code][1]
 
-                if stock_out and stock_out < start_date:
+                effective_end = end_date or "9999-99-99"
+                if stock_out and stock_out <= effective_end and last and last >= stock_out:
+                    self._checkpoint_data = {
+                        "table": table,
+                        "adjustflag": adjustflag,
+                        "last_code": code,
+                    }
                     continue
 
                 effective_start = max(start_date, stock_ipo) if stock_ipo else start_date
                 actual_start = max(effective_start, last) if last else effective_start
-                if last and last >= (end_date or "9999-99-99"):
+                if last and last >= effective_end:
                     self._checkpoint_data = {
                         "table": table,
                         "adjustflag": adjustflag,
@@ -82,6 +89,7 @@ class KlineDownloader(BaseDownloader):
                     adjustflag=str(adjustflag),
                 )
                 rows = fetch_all_rows(rs)
+                self.new_rows += self.count_new_by_date(rows, date_idx, last)
                 all_rows.extend(rows)
 
                 self._checkpoint_data = {
