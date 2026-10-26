@@ -217,6 +217,7 @@ def _sleep_idle_in_segments(
     Returns True if the 23:55 shutdown time was reached mid-sleep (so the
     caller can terminate and send the daily report); False otherwise.
     """
+    total_minutes = max(total_minutes, 1)  # 钳位非正间隔,避免无休眠热循环
     total_seconds = total_minutes * 60
     slept = 0
     while slept < total_seconds:

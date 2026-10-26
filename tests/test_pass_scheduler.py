@@ -144,6 +144,28 @@ def test_idle_interval_from_config(monkeypatch):
     assert all(s <= 300 for s in sleeps)
 
 
+def test_non_positive_interval_clamps_to_min_sleep(monkeypatch):
+    sent = _capture_send(monkeypatch)
+    monkeypatch.setattr(helpers, "get_idle_pass_interval_minutes", lambda: 0)
+    _stub_shutdown(monkeypatch, False)
+    sleeps = []
+    monkeypatch.setattr(helpers.time, "sleep", lambda s: sleeps.append(s))
+
+    calls = {"n": 0}
+
+    def main():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return 0
+        raise SystemExit(1)
+
+    helpers.run_main_with_report(main, loop=True)
+
+    assert sleeps and all(s > 0 for s in sleeps)  # 非正间隔仍须真实休眠,不热循环
+    assert sum(sleeps) == 60  # 钳位到最低 1 分钟
+    assert calls["n"] == 2  # 先睡一觉才进入第二趟
+
+
 def test_idle_interval_default(monkeypatch):
     monkeypatch.setattr(config_loader, "get_download_config", lambda: {})
     assert config_loader.get_idle_pass_interval_minutes() == 90
