@@ -16,6 +16,7 @@ api:
 # Download configuration
 # ---------------------------------------------------------------------------
 download:
+  idle_pass_interval_minutes: 90  # 无新增数据时趟次间休眠分钟数(方案B心跳休眠)
   # K-line data (daily/weekly/monthly/minute)
   kline:
     daily:

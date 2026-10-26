@@ -3,11 +3,12 @@
 import logging
 import subprocess
 import sys
+import time
 from collections.abc import Generator
 from datetime import date, datetime
 from pathlib import Path
 
-from src.config_loader import get_daily_request_limit
+from src.config_loader import get_daily_request_limit, get_idle_pass_interval_minutes
 
 
 __all__ = [
@@ -203,27 +204,89 @@ def send_daily_report(reason: str, logger: logging.Logger | None = None) -> None
         log.warning("daily_report send failed (fallback cron will retry): %s", e)
 
 
-def run_main_with_report(main_fn, logger: logging.Logger | None = None) -> None:
+_SLEEP_SEGMENT_SECONDS = 300  # 心跳休眠每段上限,确保 monitor 15 分钟静默阈值内总有日志
+
+
+def _sleep_idle_in_segments(
+    total_minutes: int,
+    log: logging.Logger,
+    is_past_shutdown_time,
+) -> bool:
+    """Sleep ``total_minutes`` in ≤300 s segments, logging a heartbeat each.
+
+    Returns True if the 23:55 shutdown time was reached mid-sleep (so the
+    caller can terminate and send the daily report); False otherwise.
+    """
+    total_seconds = total_minutes * 60
+    slept = 0
+    while slept < total_seconds:
+        segment = min(total_seconds - slept, _SLEEP_SEGMENT_SECONDS)
+        time.sleep(segment)
+        slept += segment
+        log.info(
+            "休眠心跳: 已休眠 %d 分钟 / 计划 %d 分钟,下趟继续",
+            slept // 60,
+            total_minutes,
+        )
+        if is_past_shutdown_time():
+            return True
+    return False
+
+
+def run_main_with_report(
+    main_fn, logger: logging.Logger | None = None, *, loop: bool = False
+) -> None:
     """Send the daily report only when the day's fetch is truly finished.
 
-    Terminal = SystemExit(1) (daily request limit) or normal return past the 23:55
-    shutdown. A mid-day normal return is just a pass boundary — the monitor
-    restarts the fetch — so it must not send.
+    ``loop=False`` (single pass, used by update_daily.py and ``--once``):
+    Terminal = SystemExit(1) (daily request limit) or normal return past the
+    23:55 shutdown. A mid-day normal return is just a pass boundary — the
+    monitor restarts the fetch — so it must not send.
+
+    ``loop=True`` (pass scheduler, used by download_all.py): keep running
+    passes until SystemExit(1) or the 23:55 shutdown, sleeping between idle
+    passes in ≤300 s segments with a heartbeat log per segment.
     """
     from src.downloaders.base import is_past_shutdown_time
 
-    reason = None
-    try:
-        main_fn()
-    except SystemExit as e:
-        if e.code != 1:
-            raise
-        reason = f"达到每日请求上限({get_daily_request_limit()})"
-    else:
-        if is_past_shutdown_time():
-            reason = "达到每日停止时间(23:55)"
+    if not loop:
+        reason = None
+        try:
+            main_fn()
+        except SystemExit as e:
+            if e.code != 1:
+                raise
+            reason = f"达到每日请求上限({get_daily_request_limit()})"
         else:
-            log = logger or logging.getLogger("baostock")
-            log.info("趟次结束但当日拉取未终结（monitor 将重启续拉），日报延至真正终结时发送")
-    if reason is not None:
-        send_daily_report(reason, logger)
+            if is_past_shutdown_time():
+                reason = "达到每日停止时间(23:55)"
+            else:
+                log = logger or logging.getLogger("baostock")
+                log.info("趟次结束但当日拉取未终结（monitor 将重启续拉），日报延至真正终结时发送")
+        if reason is not None:
+            send_daily_report(reason, logger)
+        return
+
+    log = logger or logging.getLogger("baostock")
+    while True:
+        reason = None
+        try:
+            new_rows = main_fn()
+        except SystemExit as e:
+            if e.code != 1:
+                raise
+            reason = f"达到每日请求上限({get_daily_request_limit()})"
+        else:
+            if new_rows is None:
+                new_rows = 0
+            if is_past_shutdown_time():
+                reason = "达到每日停止时间(23:55)"
+            elif new_rows > 0:
+                continue
+            elif _sleep_idle_in_segments(
+                get_idle_pass_interval_minutes(), log, is_past_shutdown_time
+            ):
+                reason = "达到每日停止时间(23:55)"
+        if reason is not None:
+            send_daily_report(reason, logger)
+            return
