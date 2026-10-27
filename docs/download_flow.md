@@ -385,18 +385,22 @@
 
 **日期范围:**
 - 全量下载: `start_date` = 配置值, `end_date` = `kline_end_date` (最近交易日)
-- 增量更新: `start_date` = 数据库 MAX(date)+1, `end_date` = `kline_end_date`
+- 增量更新: `start_date` = 数据库 MAX(date)(含当日,upsert 幂等吸收), `end_date` = `kline_end_date`
 
 **per-code 去重逻辑:**
 ```
 last = get_last_downloaded(table, code, adjustflag=adjustflag)  # 含复权过滤
-actual_start = max(start_date, last) if last else start_date
-if last and last >= end_date: continue    # 已完成则跳过
+effective_start = max(start_date, stock_ipo) if stock_ipo else start_date
+effective_end = end_date or "9999-99-99"
+actual_start = max(effective_start, last) if last else effective_start
+if last and last >= effective_end: continue    # 已完成则跳过
 ```
 
-**退市股自愈跳过（永久跳过条件）:**
+**退市股跳过（两个分支）:**
 ```
-skip iff stock_out and stock_out <= end_date and last >= stock_out
+(a) stock_out and stock_out < effective_start                                  → 跳过:窗口开始前已退市,窗口内无可拉数据
+(b) stock_out and stock_out <= effective_end and last and last >= stock_out    → 跳过:已退市且数据完整(自愈:若 last < stock_out
+    先补缺到 out_date,补齐后永久跳过)
 ```
 - `stock_out` 来自 `stock_basic.out_date`；退市前数据有缺口（`last < out_date`）时仍增量拉取，补到 `out_date` 后永久跳过（自愈）
 - 退市且完整的股票每趟 0 请求（此前每趟重复拉取约 340 只退市股 × 3 复权）

@@ -10,7 +10,7 @@
 - **指数数据**：上证50、沪深300、中证500成分股及指数K线
 - **公司报告**：业绩预告、业绩快报、分红送转数据
 - **智能下载**：断点续传、批量处理、会话自动重连
-- **趟次调度**：无新增数据的趟次自动休眠复检，23:55 终结发日报；退市股/指数/元数据/探测每日一探，消除重复下载
+- **趟次调度**：无新增数据的趟次自动休眠复检，23:55 终结发日报；退市股自愈跳过、指数 K 线按 code 增量、元数据与缺失数据探测每日一探，消除重复下载
 - **数据管理**：完整的数据库管理工具和日志系统
 - **云端备份**：自动压缩数据库并上传至百度网盘，支持定时备份、旧备份清理和结果邮件通知
 
@@ -381,9 +381,9 @@ stocks:
 ## 🔄 更新日志
 
 - **2026-10-26**：消除重复下载与无效趟次循环
-  - **问题根因**：指数 K 线/元数据每趟全量重拉（占空转行数 96%）、退市股与"永不完成的探测"每趟重复请求、趟次无"无事可做"终结语义致 monitor 反复重启（当日 22 趟，13:16 即烧完配额）
+  - **问题根因**：指数 K 线/元数据每趟全量重拉（空转趟 81.5k 行中指数 5.05 万 + 元数据 2.8 万，约占 96%）、退市股与"永不完成的探测"每趟重复请求、趟次无"无事可做"终结语义致 monitor 反复重启（当日 22 趟，13:16 即烧完配额）
   - **修复方案**：`main()` 返回本趟新增行数（写库前精确判重计数），`run_main_with_report` 增加趟次调度循环（无新增→90 分钟分段心跳休眠复检，23:55/配额终结发日报）；退市股自愈跳过、指数 K 线按 code 增量、元数据每日一次、财务缺失季度/复权未覆盖事件经 `daily_probe_memo` 每日一探；新增 `--once`/`--force-meta` 旗标
-  - 修改文件：`src/downloaders/`（base/kline/index/financial/report/dividend/meta）、`scripts/download_all.py`、`src/utils/helpers.py`、`src/db_manager.py`、`config.yaml`、`src/config_loader.py`、`tests/`（5 组新增）、`README.md`、`docs/download_flow.md`
+  - 修改文件：`src/downloaders/`（base/kline/index/financial/report/dividend）、`scripts/download_all.py`、`src/utils/helpers.py`、`src/db_manager.py`、`config.yaml`、`src/config_loader.py`、`tests/`（7 组新增、3 夹具修补）、`README.md`、`docs/download_flow.md`
 - **2026-10-05**：修复交易日历取不到今年全年数据的问题
   - **问题根因**：`download_trade_dates` 调用 `bs.query_trade_dates(start_date, end_date=None)`，baostock 库对 `end_date=None` 默认取**当天**而非年底（`stock_metadata.py` 内 `time.strftime("%Y-%m-%d")`），导致日历永远截止到运行当天。实测 BaoStock 服务端本身支持未来日期（`end_date=2026-12-31` 返回全年 365 行含未发生交易日），交易所年初即公布全年休市安排，服务端数据齐全
   - **修复方案**：(a) `download_trade_dates` 默认 `end_date=当年-12-31`，一次取满全年交易日历（含未来交易日）；(b) 消费点全部按 `calendar_date <= 今天` 过滤，防止未来交易日虚增期望数据量/污染校验：`daily_report.py`（日报进度估算）、`estimate_data_volume.py`（数据量估算）、`check_data_integrity.py`（L1/L3 期望交易日数与 `latest_trading_day`/`expected_cutoff`，含 `--date` 传未来日期的防御）

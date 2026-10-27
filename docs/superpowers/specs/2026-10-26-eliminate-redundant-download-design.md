@@ -1,7 +1,7 @@
 # 消除重复下载与无效趟次循环 — 设计方案
 
 - 日期:2026-10-26
-- 状态:设计待确认
+- 状态:已实现(2026-10-27 并入 master;实现计划见 docs/superpowers/plans/2026-10-26-eliminate-redundant-download.md)
 - 涉及文件:
   - `src/downloaders/kline_downloader.py`(退市股跳过)
   - `src/downloaders/index_downloader.py`(增量拉取)
