@@ -404,6 +404,7 @@ if last and last >= effective_end: continue    # 已完成则跳过
 ```
 - `stock_out` 来自 `stock_basic.out_date`；退市前数据有缺口（`last < out_date`）时仍增量拉取，补到 `out_date` 后永久跳过（自愈）
 - 退市且完整的股票每趟 0 请求（此前每趟重复拉取约 340 只退市股 × 3 复权）
+- **零新增探测每日一探**：K 线/指数查询返回 0 新增行（末日重探、长期停牌、指数发布滞后）即记 `daily_probe_memo`（scope `zero_new`，key 含表+code+复权），当日同 key 不再请求、次日恢复。防"自愈条件永不成立"型永久空探（实测 43 只退市股最后一根 K 线在 `out_date` 前一日，`last >= out_date` 永假）
 
 **断点续传逻辑 (日线/周线/月线均支持):**
 ```

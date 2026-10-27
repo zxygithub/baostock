@@ -33,6 +33,9 @@ class IndexDownloader(BaseDownloader):
         for code in tqdm(codes, desc="Index daily"):
             if self._interrupted:
                 break
+            probe_key = f"index_daily|{code}"
+            if self.is_probed_today("zero_new", probe_key):
+                continue
             last = self.get_last_downloaded("index_daily", code)
             if end_date is not None and last and last >= end_date:
                 continue
@@ -46,9 +49,12 @@ class IndexDownloader(BaseDownloader):
                 frequency="d",
             )
             rows = fetch_all_rows(rs)
+            new = self.count_new_by_date(rows, date_idx, last)
+            self.new_rows += new
+            if new == 0:
+                self.mark_probed("zero_new", probe_key)
             if not rows:
                 continue
-            self.new_rows += self.count_new_by_date(rows, date_idx, last)
             df = pd.DataFrame(rows, columns=INDEX_DAILY_FIELDS.split(","))
             df = df.rename(columns=RENAME_KLINE)
             self.save_df(df, "index_daily", if_exists="upsert")
@@ -73,6 +79,9 @@ class IndexDownloader(BaseDownloader):
         for code in tqdm(codes, desc="Index weekly"):
             if self._interrupted:
                 break
+            probe_key = f"index_weekly|{code}"
+            if self.is_probed_today("zero_new", probe_key):
+                continue
             last = self.get_last_downloaded("index_weekly", code)
             if end_date is not None and last and last >= end_date:
                 continue
@@ -86,9 +95,12 @@ class IndexDownloader(BaseDownloader):
                 frequency="w",
             )
             rows = fetch_all_rows(rs)
+            new = self.count_new_by_date(rows, date_idx, last)
+            self.new_rows += new
+            if new == 0:
+                self.mark_probed("zero_new", probe_key)
             if not rows:
                 continue
-            self.new_rows += self.count_new_by_date(rows, date_idx, last)
             df = pd.DataFrame(rows, columns=INDEX_WEEKLY_MONTHLY_FIELDS.split(","))
             df = df.rename(columns=RENAME_KLINE)
             self.save_df(df, "index_weekly", if_exists="upsert")
@@ -113,6 +125,9 @@ class IndexDownloader(BaseDownloader):
         for code in tqdm(codes, desc="Index monthly"):
             if self._interrupted:
                 break
+            probe_key = f"index_monthly|{code}"
+            if self.is_probed_today("zero_new", probe_key):
+                continue
             last = self.get_last_downloaded("index_monthly", code)
             if end_date is not None and last and last >= end_date:
                 continue
@@ -126,9 +141,12 @@ class IndexDownloader(BaseDownloader):
                 frequency="m",
             )
             rows = fetch_all_rows(rs)
+            new = self.count_new_by_date(rows, date_idx, last)
+            self.new_rows += new
+            if new == 0:
+                self.mark_probed("zero_new", probe_key)
             if not rows:
                 continue
-            self.new_rows += self.count_new_by_date(rows, date_idx, last)
             df = pd.DataFrame(rows, columns=INDEX_WEEKLY_MONTHLY_FIELDS.split(","))
             df = df.rename(columns=RENAME_KLINE)
             self.save_df(df, "index_monthly", if_exists="upsert")

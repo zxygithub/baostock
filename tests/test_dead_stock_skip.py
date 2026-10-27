@@ -14,6 +14,7 @@ the same pattern as test_adjust_factor_skip.py.
 
 import logging
 
+from src.db_manager import DBManager
 from src.downloaders.kline_downloader import KlineDownloader
 import src.downloaders.kline_downloader as kline_mod
 
@@ -24,6 +25,7 @@ FIELDS = "date,code,open"
 def _make_dl(tmp_path):
     dl = object.__new__(KlineDownloader)
     dl.db_path = tmp_path / "dl.db"
+    DBManager(str(dl.db_path)).init_all_tables()  # 含 daily_probe_memo(zero_new 备忘)
     dl._conn = None
     dl._limit_exceeded = True
     dl._interrupted = False

@@ -52,6 +52,15 @@ class KlineDownloader(BaseDownloader):
                         skipping = False
                     continue
 
+                probe_key = f"{table}|{code}|{adjustflag}"
+                if self.is_probed_today("zero_new", probe_key):
+                    self._checkpoint_data = {
+                        "table": table,
+                        "adjustflag": adjustflag,
+                        "last_code": code,
+                    }
+                    continue
+
                 last = self.get_last_downloaded(table, code, adjustflag=adjustflag)
 
                 stock_ipo = None
@@ -91,7 +100,10 @@ class KlineDownloader(BaseDownloader):
                     adjustflag=str(adjustflag),
                 )
                 rows = fetch_all_rows(rs)
-                self.new_rows += self.count_new_by_date(rows, date_idx, last)
+                new = self.count_new_by_date(rows, date_idx, last)
+                self.new_rows += new
+                if new == 0:
+                    self.mark_probed("zero_new", probe_key)
                 all_rows.extend(rows)
 
                 self._checkpoint_data = {

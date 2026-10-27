@@ -16,6 +16,7 @@ import logging
 import pytest
 
 import src.downloaders.index_downloader as index_mod
+from src.db_manager import DBManager
 from src.downloaders.index_downloader import IndexDownloader
 from src.config import INDEX_DAILY_FIELDS, INDEX_WEEKLY_MONTHLY_FIELDS
 
@@ -31,6 +32,7 @@ METHODS = {
 def _make_dl(tmp_path):
     dl = object.__new__(IndexDownloader)
     dl.db_path = tmp_path / "dl.db"
+    DBManager(str(dl.db_path)).init_all_tables()  # 含 daily_probe_memo(zero_new 备忘)
     dl._conn = None
     dl._limit_exceeded = True
     dl._interrupted = False

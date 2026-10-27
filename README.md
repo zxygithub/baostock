@@ -380,6 +380,11 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-10-27**：修复退市股自愈分支的永久空探（K 线/指数零新增探测每日一探）
+  - **问题根因**：退市股最后一根 K 线在 `out_date` 前一交易日（实测 43 只股票 `库内max = out_date - 1`），自愈条件 `last >= out_date` 永不成立，每趟重复探测；叠加指数末日重探（服务端日线发布滞后），空转趟实测 153 次请求（超出 ≤50 验收口径），日耗约 2.4k 请求
+  - **修复方案**：K 线/指数查询返回 0 新增行即记 `daily_probe_memo`（scope `zero_new`，key 含表+code+复权），当日同 key 不再请求、次日恢复；时效语义不变（`target_date=昨日` 本就 T+1 拉取）
+  - **测试**：新增 `tests/test_zero_new_probe_memo.py` 4 例（当日一探、次日恢复、有新增不落备忘、指数同语义）；既有 `test_dead_stock_skip.py`/`test_index_kline_incremental.py` 夹具补建 `daily_probe_memo`
+  - 修改文件：`src/downloaders/kline_downloader.py`、`src/downloaders/index_downloader.py`、`tests/`（1 组新增、2 夹具修补）、`README.md`、`docs/download_flow.md`
 - **2026-10-26**：消除重复下载与无效趟次循环
   - **问题根因**：指数 K 线/元数据每趟全量重拉（空转趟 81.5k 行中指数 5.05 万 + 元数据 2.8 万，约占 96%）、退市股与"永不完成的探测"每趟重复请求、趟次无"无事可做"终结语义致 monitor 反复重启（当日 22 趟，13:16 即烧完配额）
   - **修复方案**：`main()` 返回本趟新增行数（写库前精确判重计数），`run_main_with_report` 增加趟次调度循环（无新增→90 分钟分段心跳休眠复检，23:55/配额终结发日报）；退市股自愈跳过、指数 K 线按 code 增量、元数据每日一次、财务缺失季度/复权未覆盖事件经 `daily_probe_memo` 每日一探；新增 `--once`/`--force-meta` 旗标
