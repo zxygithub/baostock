@@ -14,6 +14,7 @@ from src.config_loader import (
     get_productive_pass_interval_minutes,
 )
 from src.utils import blacklist
+from src.downloaders.base import BlacklistedError
 
 
 __all__ = [
@@ -338,6 +339,10 @@ def run_main_with_report(
         reason = None
         try:
             new_rows = main_fn()
+        except BlacklistedError:
+            # 决策 2:被封立即终止进程;沿用既有裁定——不发日报
+            log.warning("命中黑名单熔断,终止趟次调度(不发日报;等待退避期过后重试)")
+            return
         except SystemExit as e:
             if e.code != 1:
                 raise

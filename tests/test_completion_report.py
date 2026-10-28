@@ -11,6 +11,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.utils import helpers
+from src.downloaders.base import BlacklistedError
 
 
 def _capture_send(monkeypatch):
@@ -77,13 +78,13 @@ def test_generic_exception_propagates_and_skips(monkeypatch):
     assert sent == []
 
 
-def test_systemexit_string_propagates_and_skips(monkeypatch):
+def test_blacklisted_error_propagates_and_skips(monkeypatch):
     sent = _capture_send(monkeypatch)
 
     def blacklisted():
-        raise SystemExit("IP blacklisted.")
+        raise BlacklistedError("IP blacklisted.")
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(BlacklistedError):
         helpers.run_main_with_report(blacklisted)
 
     assert sent == []

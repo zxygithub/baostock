@@ -195,10 +195,18 @@ class FinancialDownloader(BaseDownloader):
     def _flush_pending_batches(self):
         batch_dfs = getattr(self, "_batch_dfs", None)
         if batch_dfs:
-            combined = pd.concat(batch_dfs, ignore_index=True)
-            self._batch_upsert(combined, getattr(self, "_batch_table", "unknown"))
+            table_name = getattr(self, "_batch_table", None)
+            if not table_name:
+                # 评审问题 E:_batch_table 未设属异常状态,显式报错并丢弃,
+                # 不得静默建一张名为 "unknown" 的垃圾表。
+                self.logger.error(
+                    f"_batch_table 未设置,跳过 {len(batch_dfs)} 条批量写入(拒绝写入 unknown 表)"
+                )
+            else:
+                combined = pd.concat(batch_dfs, ignore_index=True)
+                self._batch_upsert(combined, table_name)
+                self.logger.info("Flushed pending batch to DB before API limit exit")
             self._batch_dfs.clear()
-            self.logger.info("Flushed pending batch to DB before API limit exit")
         super()._flush_pending_batches()
 
     def _batch_upsert(self, df: pd.DataFrame, table_name: str) -> None:

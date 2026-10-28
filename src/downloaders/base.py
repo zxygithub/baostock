@@ -8,7 +8,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from src.config import DAILY_SHUTDOWN_TIME
+from src.config import BSERR_BLACKLIST_USER, DAILY_SHUTDOWN_TIME
 from src.config_loader import get_socket_timeout, get_daily_request_limit
 from src.utils import blacklist
 
@@ -19,6 +19,14 @@ def is_past_shutdown_time() -> bool:
 
 # API request log marker - used for statistical analysis
 API_LOG_MARKER = "[API_REQ]"
+
+
+class BlacklistedError(Exception):
+    """服务端返回 10001011(IP 黑名单)。
+
+    直接继承 Exception——若继承 RuntimeError,financial/report/dividend 等处的
+    `except RuntimeError: continue` 会把它吞掉,被封后继续砸服务器(缺口 E)。
+    """
 
 
 class _ApiResultWrapper:
@@ -91,6 +99,7 @@ class BaseDownloader:
         self._login_time: float = 0
         self._interrupted: bool = False
         self._limit_exceeded: bool = False
+        self._blacklisted: bool = False
         self.new_rows: int = 0  # 累计"此前不在库中的真实数据行"（由调用方 += count_new_rows(...)）
         # 启动闸(组件 2):封禁退避期内构造下载器立即止步,不发 login
         blocked, remain = blacklist.in_backoff()
@@ -106,6 +115,30 @@ class BaseDownloader:
         if hasattr(context, "default_socket") and context.default_socket is not None:
             context.default_socket.settimeout(self.SOCKET_TIMEOUT)
             self.logger.debug(f"Socket timeout set to {self.SOCKET_TIMEOUT}s")
+
+    def _raise_blacklisted(self, source: str, detail: str) -> None:
+        """熔断:标记封禁、保住内存批次、报错(自带解法)并抛出。绝不重试——
+        重试对封禁毫无意义,且每一发都会刷新/延长封禁。"""
+        self._blacklisted = True
+        blacklist.arm(source=source, detail=detail)
+        self._flush_pending_batches()
+        self.logger.error(
+            blacklist.blocked_message(blacklist.get_blacklist_backoff_minutes() * 60)
+        )
+        raise BlacklistedError(f"服务端返回 {BSERR_BLACKLIST_USER}(黑名单用户): {detail}")
+
+    def _close_default_socket(self):
+        """被封时跳过 logout RPC,但显式关闭底层 socket 防 fd 泄漏
+        (baostock socketutil.connect 每次 login 新建 socket 覆盖 default_socket)。"""
+        try:
+            import baostock.common.context as context
+
+            sock = getattr(context, "default_socket", None)
+            if sock is not None:
+                sock.close()
+                context.default_socket = None
+        except Exception as e:  # noqa: BLE001 - 清理路径不抛
+            self.logger.warning(f"关闭 baostock socket 失败(忽略): {e}")
 
     def _check_daily_limit(self):
         """Check if today's API request count has reached the limit."""
@@ -155,6 +188,8 @@ class BaseDownloader:
         finally:
             self._increment_request_count()
             self._check_limit_after_increment()
+        if rs.error_code == BSERR_BLACKLIST_USER:
+            self._raise_blacklisted("query", f"{func_name} {params}")
         return _ApiResultWrapper(rs, func_name, params, self.logger)
 
     def _check_limit_after_increment(self):
@@ -181,15 +216,13 @@ class BaseDownloader:
         # 登录是会话开销 RPC，服务端同样计入配额，须记账（仅计数，不做上限检查）
         self._increment_request_count()
         self.conn.commit()
-        if lg.error_code == "10001011":
-            self.logger.error(
-                "BaoStock IP is blacklisted. Please seek help in the QQ group."
-            )
-            raise SystemExit("IP blacklisted.")
+        if lg.error_code == BSERR_BLACKLIST_USER:
+            self._raise_blacklisted("login", "bs.login")
         if lg.error_code != "0":
             raise ConnectionError(f"BaoStock login failed: {lg.error_msg}")
         self._apply_socket_timeout()
         self._login_time = time.time()
+        blacklist.clear()  # 登录成功即视为解封,清除标记(自愈)
         self.logger.info("BaoStock login successful")
 
     def logout(self):
@@ -237,7 +270,10 @@ class BaseDownloader:
                 self.logger.warning(f"WAL checkpoint failed during close: {e}")
             self._conn.close()
             self._conn = None
-        if not self._limit_exceeded:
+        if getattr(self, "_blacklisted", False):
+            # 被封:不再多打一发 logout(每一发都会延长封禁),但必须关 socket
+            self._close_default_socket()
+        elif not self._limit_exceeded:
             self.logout()
 
     def _flush_pending_batches(self):
@@ -319,6 +355,9 @@ class BaseDownloader:
                 if rs.error_code == "0":
                     return wrapped
                 wrapped.mark_error()
+                if rs.error_code == BSERR_BLACKLIST_USER:
+                    # 组件 3 熔断:首个 10001011 即止,不进通用重试
+                    self._raise_blacklisted("query", f"{func_name} {params}")
                 msg = rs.error_msg.lower()
                 if "session" in msg or "网络" in msg or "未登录" in msg:
                     # 指数退避：3s, 6s, 12s... 避免快速 logout/login 循环
@@ -346,6 +385,9 @@ class BaseDownloader:
                     f"Malformed JSON response, skipping retry (attempt {attempt + 1}): {e}"
                 )
                 break
+            except BlacklistedError:
+                # 熔断必须穿透:既不重试,也不被通用异常分支吞掉
+                raise
             except Exception as e:
                 self.logger.warning(f"Query exception (attempt {attempt + 1}): {e}")
 
