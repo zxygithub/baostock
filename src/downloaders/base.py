@@ -36,7 +36,14 @@ class BlacklistedError(Exception):
 class _ApiResultWrapper:
     """Wraps a BaoStock result set to log row count when fully consumed."""
 
-    def __init__(self, rs, func_name: str, params: str, logger: logging.Logger):
+    def __init__(
+        self,
+        rs,
+        func_name: str,
+        params: str,
+        logger: logging.Logger,
+        on_page=None,
+    ):
         self._rs = rs
         self._func_name = func_name
         self._params = params
@@ -44,6 +51,7 @@ class _ApiResultWrapper:
         self._row_count = 0
         self._consumed = False
         self._has_error = False
+        self._on_page = on_page  # 翻页计数回调(缺口 H:分页即服务端多一次请求)
 
     def mark_error(self):
         """Mark this result as having an error (suppresses row count logging)."""
@@ -53,7 +61,10 @@ class _ApiResultWrapper:
         return getattr(self._rs, name)
 
     def next(self):
+        prev_page = getattr(self._rs, "cur_page_num", 0)
         result = self._rs.next()
+        if self._on_page is not None and getattr(self._rs, "cur_page_num", 0) > prev_page:
+            self._on_page()  # 满页自动取下一页:服务端计一次请求,本地必须同步计
         if result:
             self._row_count += 1
         else:
@@ -210,6 +221,11 @@ class BaseDownloader:
         # The request_count increment is "fire-and-forget" and will be
         # committed along with the next explicit self.conn.commit().
 
+    def _count_page_turn(self) -> None:
+        """翻页计数回调:翻页即多一次服务端请求,计数并检查配额触顶(缺口 H)。"""
+        self._increment_request_count()
+        self._check_limit_after_increment()
+
     def _api_call(self, func, *args, **kwargs):
         """Wrapper for direct baostock API calls that increments request count."""
         self.ensure_login()
@@ -223,7 +239,7 @@ class BaseDownloader:
             self._check_limit_after_increment()
         if rs.error_code == BSERR_BLACKLIST_USER:
             self._raise_blacklisted("query", f"{func_name} {params}")
-        return _ApiResultWrapper(rs, func_name, params, self.logger)
+        return _ApiResultWrapper(rs, func_name, params, self.logger, on_page=self._count_page_turn)
 
     def _check_limit_after_increment(self):
         """Check if the request limit has been reached after incrementing."""
@@ -385,7 +401,9 @@ class BaseDownloader:
                     self._check_limit_after_increment()
                 func_name = getattr(query_func, "__name__", str(query_func))
                 params = _build_params_str(query_func, **kwargs)
-                wrapped = _ApiResultWrapper(rs, func_name, params, self.logger)
+                wrapped = _ApiResultWrapper(
+                    rs, func_name, params, self.logger, on_page=self._count_page_turn
+                )
                 if rs.error_code == "0":
                     return wrapped
                 wrapped.mark_error()
