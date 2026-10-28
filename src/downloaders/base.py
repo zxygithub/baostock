@@ -9,7 +9,11 @@ from datetime import datetime
 from pathlib import Path
 
 from src.config import BSERR_BLACKLIST_USER, DAILY_SHUTDOWN_TIME
-from src.config_loader import get_socket_timeout, get_daily_request_limit
+from src.config_loader import (
+    get_socket_timeout,
+    get_daily_request_limit,
+    get_min_request_interval,
+)
 from src.utils import blacklist
 
 
@@ -90,6 +94,9 @@ _DAILY_REQUEST_LIMIT = get_daily_request_limit()
 class BaseDownloader:
     SOCKET_TIMEOUT: int = _SOCKET_TIMEOUT  # seconds for socket recv/connect
     DAILY_REQUEST_LIMIT: int = _DAILY_REQUEST_LIMIT
+    # 类级默认值仅为部分构造对象(测试夹具 object.__new__)兜底;
+    # 实例一经访问即写入实例属性,__init__ 也会显式初始化。
+    _last_request_ts: float = 0.0
 
     def __init__(self, db_path: str | Path, logger: logging.Logger | None = None):
         self.db_path = Path(db_path)
@@ -100,6 +107,7 @@ class BaseDownloader:
         self._interrupted: bool = False
         self._limit_exceeded: bool = False
         self._blacklisted: bool = False
+        self._last_request_ts: float = 0.0
         self.new_rows: int = 0  # 累计"此前不在库中的真实数据行"（由调用方 += count_new_rows(...)）
         # 启动闸(组件 2):封禁退避期内构造下载器立即止步,不发 login
         blocked, remain = blacklist.in_backoff()
@@ -108,6 +116,30 @@ class BaseDownloader:
             raise SystemExit(2)
         self._check_daily_limit()
         self.login()
+
+    @property
+    def min_request_interval(self) -> float:
+        """请求最小间隔(秒)。每次访问现读配置(§3.4 不冻结反模式):
+        property 化解决"测试可注入",不是文件热加载——config_loader 有
+        _config_cache,改 config.yaml 仍需重启进程才生效。"""
+        return get_min_request_interval()
+
+    def _throttle(self) -> None:
+        """请求频率闸(组件 4):补足距上次请求的差额到 min_request_interval。
+
+        与既有 sleep 取最大值语义——只补差额,故 FINANCIAL_SLEEP/批间
+        batch_sleep 等既有节流不会被叠加放大;<=0 视为禁用。
+        """
+        interval = self.min_request_interval
+        if interval <= 0:
+            self._last_request_ts = time.time()
+            return
+        elapsed = time.time() - self._last_request_ts
+        if 0 < elapsed < interval:
+            time.sleep(interval - elapsed)
+        elif elapsed <= 0:
+            time.sleep(interval)  # 时钟回拨:按整段下限等待
+        self._last_request_ts = time.time()
 
     def _apply_socket_timeout(self):
         import baostock.common.context as context
@@ -181,6 +213,7 @@ class BaseDownloader:
     def _api_call(self, func, *args, **kwargs):
         """Wrapper for direct baostock API calls that increments request count."""
         self.ensure_login()
+        self._throttle()
         func_name = getattr(func, "__name__", str(func))
         params = _build_params_str(func, *args, **kwargs)
         try:
@@ -343,6 +376,7 @@ class BaseDownloader:
                 self.ensure_login()
                 if self._interrupted:
                     raise SystemExit(0)
+                self._throttle()
                 try:
                     rs = query_func(**kwargs)
                 finally:

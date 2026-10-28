@@ -112,25 +112,24 @@ class KlineDownloader(BaseDownloader):
                     "last_code": code,
                 }
 
-            if not all_rows:
-                continue
+            if all_rows:
+                df = pd.DataFrame(all_rows, columns=fields.split(","))
+                df = df.rename(
+                    columns={k: v for k, v in RENAME_KLINE.items() if k in df.columns}
+                )
 
-            df = pd.DataFrame(all_rows, columns=fields.split(","))
-            df = df.rename(
-                columns={k: v for k, v in RENAME_KLINE.items() if k in df.columns}
-            )
+                for col in ["open", "high", "low", "close", "volume", "amount", "preclose"]:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors="coerce")
+                if "turn" in df.columns:
+                    df["turn"] = df["turn"].apply(convert_turn_field)
+                for col in ["tradestatus", "is_st"]:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
 
-            for col in ["open", "high", "low", "close", "volume", "amount", "preclose"]:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors="coerce")
-            if "turn" in df.columns:
-                df["turn"] = df["turn"].apply(convert_turn_field)
-            for col in ["tradestatus", "is_st"]:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
-
-            self.save_df(df, table, if_exists="upsert")
-            total_rows += len(df)
+                self.save_df(df, table, if_exists="upsert")
+                total_rows += len(df)
+            # 缺口 G:空批也必须执行批间睡眠,否则 200 个重查询背靠背发出
             time.sleep(batch_sleep)
 
         return total_rows
