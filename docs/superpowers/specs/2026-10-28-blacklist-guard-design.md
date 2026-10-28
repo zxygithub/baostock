@@ -1,7 +1,7 @@
 # IP 黑名单防护三道闸 — 设计方案
 
 - 日期：2026-10-28
-- 状态：**已批准**（3 项决策已于 2026-10-28 确认，见「已确认决策」章节；尚未实现）
+- 状态：**已实现**（2026-10-28 落地：三道闸 + 分页计数 + 日报/monitor 协同，测试 297 例通过；3 项决策按「已确认决策」执行。实现中与本方案的两处口径修正见文末「实现后注记」）
 - 触发：GitHub 用户反馈 Windows 环境下仅运行 `scripts/download_all.py` 即被 BaoStock 拉黑
 - 反馈原文：
   ```
@@ -119,6 +119,8 @@
 | 0.50s | 2.0 req/s | 6.4 h | K 线 +2.4h；财务 +100% 时长 |
 
 结论：0.30s 的额外成本主要落在 K 线阶段（正是缺口 G 所在），且当日总耗时仍远在 24h 常驻窗口内（`docs/download_flow.md` §8 估算日增量约 82,600 次 ≈ 2 天配额）。
+
+> **实现后注记（2026-10-28）**：本表「报告/分红无变化（已是 1s/只）」一列在方案定稿后过时——同日落地的批内限速已把报告/分红改为每 200 请求睡 1s（约 0.2s/请求），叠加 0.30s 硬下限后约为 0.30s/请求，仍远快于改造前的 1.2s/只；K 线由约 0.16s/请求升至 0.30s/请求，本表「K 线 +1.4h」口径仍然成立。
 
 ### 3.2 决策 2 的落地含义
 
@@ -405,3 +407,13 @@ Task 7 说明：组件 3 已让封禁不再以 RuntimeError 形式击穿 K 线�
 - 登录语义：baostock `login/loginout.py:17`（`user_id='anonymous'`，全体用户同一账号 → 封禁必然是 IP 级）
 - 共享 IP 被连坐的社区实例：https://github.com/sngyai/Sequoia-X/issues/127
 - 解封指引（含 TUN 模式说明）：https://github.com/mark32123/MACD-BottomScreener
+
+---
+
+## 实现后注记（2026-10-28，与方案的口径差异）
+
+1. **组件 3 熔断同时覆盖 `_api_call`**：`meta/macro/component` 共 12 个调用点走 `_api_call` 而非 `query_with_retry`，若只按组件 3 原文只改 `query_with_retry`/`login`，「被封后 0 次请求」（§2.1）在该路径不成立。实现按 §2.1 目标补齐，回归用例 `test_api_call_blacklist_breaks`。
+2. **`blacklist.blocked_message(remain)` 文案助手**：组件 2 的固定文案需在 3 个闸点复用（helpers 入口/每趟、`BaseDownloader.__init__`、熔断点），抽为纯格式化函数；接口表的 6 个函数语义不变。
+3. **monitor 退避常量归一的实现形态**（决策 3）：用独立的 `load_backoff_minutes()`（python 一行读 `config_loader`，失败回落 120 + WARN）而非塞进 `check_connectivity` 的 heredoc——该 heredoc 以退出码为契约，混入输出解析更脆；「config.yaml 单一事实源 + 失败回落」的决策语义完整保留。
+4. **部分构造对象的兜底**：`close()` 对 `_blacklisted` 用 `getattr` 兜底、`_last_request_ts` 提供类级默认值——既有测试夹具以 `object.__new__` 构造部分对象，且 `close()` 有「不得抛」的既有契约；两者均非配置冻结，不违反 §3.4。
+5. **测试隔离**：`tests/conftest.py` autouse 旁路黑名单闸（`set_bypass(True)`），避免真实 `data/.blacklisted` 存在时套件被打红；闸门类用例显式 `set_bypass(False)` 并把标记指到 tmp_path。

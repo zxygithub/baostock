@@ -124,6 +124,8 @@
 
 #### 问题 A: 配置热加载仍不支持
 
+> **2026-10-28 复核：部分缓解。** 新增的两个配置项 `api.min_request_interval`、`api.blacklist_backoff_minutes` 均按动态读取实现（`BaseDownloader.min_request_interval` property、`in_backoff()` 内读 `config_loader`），不再复制冻结反模式；但本问题涉及的 `SOCKET_TIMEOUT`/`DAILY_REQUEST_LIMIT` 冻结依旧存在（属完整修复，独立议题）。另需注意：`config_loader._config_cache` 仍在，即便 property 化，改 `config.yaml` 后仍需重启进程——property 化解决的是"测试可注入"，不是文件热加载。
+
 `BaseDownloader.SOCKET_TIMEOUT` 和 `DAILY_REQUEST_LIMIT` 在模块导入时就被冻结：
 
 ```python
@@ -171,6 +173,8 @@ def _get_stock_codes(db_path, codes_file=None, logger=None):
 ---
 
 #### 问题 E: `FinancialDownloader._flush_pending_batches()` 的默认表名
+
+> **2026-10-28 复核：已修。** `"unknown"` fallback 改为显式 `logger.error` + 跳过写入（拒绝静默建垃圾表）；回归用例 `tests/test_blacklist_circuit_break.py::test_flush_without_batch_table_writes_no_unknown`。触发路径：黑名单熔断新增了一条此前不存在的 `_flush_pending_batches` 进入路径，故随三道闸一并修复。
 
 ```python
 # financial_downloader.py 第 153 行

@@ -630,28 +630,38 @@ for code, year, quarter in all_combinations:
 │  │     if time.time() - _login_time > 900s:     │  │
 │  │       logout() → login()                      │  │
 │  │                                               │  │
-│  │  2. 执行查询                                   │  │
-│  │     rs = query_func(**kwargs)                 │  │
+│  │  2. _throttle()  ← 请求频率闸(硬下限)         │  │
+│  │     距上次请求不足 min_request_interval 则补睡 │  │
+│  │     (与既有批间 sleep 取最大值,不叠加)        │  │
 │  │                                               │  │
-│  │  3. _increment_request_count()                │  │
+│  │  3. 执行查询                                   │  │
+│  │     rs = query_func(**kwargs)                 │  │
+│  │     error_code == 10001011 → 熔断:            │  │
+│  │       arm 标记 + 转储批次 + BlacklistedError  │  │
+│  │                                               │  │
+│  │  4. _increment_request_count()                │  │
 │  │     INSERT ... ON CONFLICT DO UPDATE          │  │
 │  │     SET count = count + 1                     │  │
 │  │     WHERE date = today                        │  │
+│  │     (翻页再逐页 +1:分页即服务端多一次请求)    │  │
 │  │                                               │  │
-│  │  4. 检查是否超限                               │  │
+│  │  5. 检查是否超限                               │  │
 │  │     if new_count >= DAILY_REQUEST_LIMIT:      │  │
 │  │       raise SystemExit(1)  ← 程序退出         │  │
 │  │                                               │  │
-│  │  5. 失败重试 (max 3次)                        │  │
+│  │  6. 失败重试 (max 3次)                        │  │
 │  │     指数退避: sleep(2s) → sleep(4s) → sleep(8s)│  │
+│  │     BlacklistedError 不重试、直接穿透         │  │
 │  └───────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────┘
 ```
 
 **说明:**
 - `_increment_request_count` 使用直接 SQL（UPSERT），避免 DBManager 迁移开销
-- 失败请求也会计数（服务器端已计数）
+- 失败请求也会计数（服务器端已计数）；翻页（resultset 满页自动取下一页）逐页计数，误差 0（缺口 H 修正）
 - 请求计数表 `request_count` 在 `migrate_schema()` 中自动创建
+- 请求频率闸 `api.min_request_interval`（默认 0.30s）集中于 `BaseDownloader._throttle()`，7 个 downloader 自动受约束；`<=0` 视为禁用；配置每次请求现读（property，不冻结），但改 `config.yaml` 仍需重启进程（config_loader 有缓存）
+- 黑名单熔断见 README「黑名单检测（2026-10-28 三道闸）」：首个 `10001011` 即终止，被封后 0 次后续请求
 
 ## 7. 各阶段 API 请求汇总（估算）
 
@@ -695,6 +705,8 @@ for code, year, quarter in all_combinations:
 |------|--------|------|------|
 | `daily_request_limit` | 46,000 | config.yaml | 每日 API 请求上限 |
 | `socket_timeout` | 30 | config.yaml | 网络超时（秒） |
+| `api.min_request_interval` | 0.30 | config.yaml | 每请求最小间隔硬下限（秒，`<=0` 禁用；与既有 sleep 取最大值不叠加） |
+| `api.blacklist_backoff_minutes` | 120 | config.yaml | `data/.blacklisted` 退避窗口（分钟）；monitor 亦读此值（读取回落 120） |
 | `batch_size` | 200 | config.yaml | 每批处理股票数；同时是限速窗口（每 N 次请求暂停一次） |
 | `batch_sleep` | 1 | config.yaml | 每个限速窗口后的停顿（秒；分红/复权/报表/K 线同款节奏） |
 | `stocks.filter` | type=1 AND status=1 | config.yaml | 股票筛选条件（SQL WHERE） |
