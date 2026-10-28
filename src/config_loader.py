@@ -114,6 +114,20 @@ def get_daily_request_limit() -> int:
     return get_api_config().get("daily_request_limit", 46000)
 
 
+def get_min_request_interval() -> float:
+    """Get minimum interval (seconds) between API requests; <= 0 disables.
+
+    每次请求现读(经 property),不模块级冻结——但 config_loader 有模块级
+    _config_cache,改 config.yaml 文件后仍需重启进程才生效(非热加载)。
+    """
+    return get_api_config().get("min_request_interval", 0.30)
+
+
+def get_blacklist_backoff_minutes() -> int:
+    """Get the blacklist backoff window (minutes) for data/.blacklisted."""
+    return get_api_config().get("blacklist_backoff_minutes", 120)
+
+
 def get_idle_pass_interval_minutes() -> int:
     """Get idle sleep interval (minutes) between passes that add no new rows."""
     return get_download_config().get("idle_pass_interval_minutes", 90)

@@ -23,6 +23,7 @@ FINANCIAL_SLEEP: float = 0.25  # seconds between financial API calls
 LOGIN_REFRESH_INTERVAL: int = 540  # seconds (9 min) before re-login
 MAX_RETRIES: int = 3  # maximum number of retry attempts
 DAILY_SHUTDOWN_TIME: str = "23:55"  # HH:MM - save data and exit when reached
+BSERR_BLACKLIST_USER: str = "10001011"  # BaoStock 服务端错误码:IP/用户在黑名单
 
 # ---------------------------------------------------------------------------
 # Index codes

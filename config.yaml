@@ -11,6 +11,8 @@
 api:
   socket_timeout: 30  # seconds for socket recv/connect
   daily_request_limit: 46000  # daily API request limit
+  min_request_interval: 0.30  # seconds floor between API requests (throttle); <=0 disables
+  blacklist_backoff_minutes: 120  # data/.blacklisted 退避窗口(分钟);monitor 亦从 config_loader 读此值
 
 # ---------------------------------------------------------------------------
 # Download configuration
