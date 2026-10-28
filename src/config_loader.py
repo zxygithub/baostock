@@ -100,8 +100,8 @@ def get_batch_size() -> int:
 
 
 def get_batch_sleep() -> float:
-    """Get sleep time between batches."""
-    return get_stocks_config().get("batch_sleep", 2)
+    """Get sleep time between pacing windows (one window = batch_size requests)."""
+    return get_stocks_config().get("batch_sleep", 1)
 
 
 def get_socket_timeout() -> int:

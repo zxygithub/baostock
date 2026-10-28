@@ -9,6 +9,7 @@ K-line batch pacing.
 import logging
 import time
 
+from src import config_loader
 from src.downloaders.dividend_downloader import DividendDownloader
 import src.downloaders.dividend_downloader as div_mod
 from src.downloaders.report_downloader import ReportDownloader
@@ -47,6 +48,12 @@ def test_pacer_defaults_to_time_sleep(monkeypatch):
     for _ in range(2):
         pacer.tick()
     assert sleeps == [0.5]
+
+
+def test_batch_sleep_default_matches_config_yaml(monkeypatch):
+    """缺省值须与 config.yaml 显式值一致(batch_sleep: 1),否则限速窗口静默变慢。"""
+    monkeypatch.setattr(config_loader, "get_stocks_config", lambda: {})
+    assert config_loader.get_batch_sleep() == 1
 
 
 # ── 集成:分红循环按批限速,而非逐请求休眠 ──────────────────────────────

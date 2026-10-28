@@ -107,6 +107,37 @@ def test_compute_interval_cap_zero_clamps_in_sleeper(monkeypatch):
     assert helpers.compute_pass_interval_minutes(0, 1) == (0, 2)  # 0 交给休眠器钳位到 1 分钟
 
 
+def test_compute_interval_base_zero_clamps_in_sleeper(monkeypatch):
+    monkeypatch.setattr(helpers, "get_productive_pass_interval_minutes", lambda: 0)
+    monkeypatch.setattr(helpers, "get_idle_pass_interval_minutes", lambda: 90)
+    assert helpers.compute_pass_interval_minutes(0, 1) == (0, 2)  # base=0 同样交给休眠器钳位
+    assert helpers.compute_pass_interval_minutes(7, 1) == (0, 0)  # 有新增亦然,不热循环
+
+
+def test_short_interval_sleep_crossing_shutdown_sends_report(monkeypatch):
+    """有新增趟次的短间隔(10 分钟)睡过 23:55,同样必须终结发日报。"""
+    sent = _capture_send(monkeypatch)
+    monkeypatch.setattr(helpers, "get_productive_pass_interval_minutes", lambda: 10)
+    sleeps = []
+    monkeypatch.setattr(helpers.time, "sleep", lambda s: sleeps.append(s))
+
+    state = {"n": 0}
+
+    def shutdown():
+        state["n"] += 1
+        return state["n"] >= 2  # 第 1 次:趟次开始前未到 23:55;第 2 次:睡眠中跨过
+
+    monkeypatch.setattr("src.downloaders.base.is_past_shutdown_time", shutdown)
+
+    def main():
+        return 5  # 有新增 → 走短间隔分支
+
+    helpers.run_main_with_report(main, loop=True)
+
+    assert sent == ["达到每日停止时间(23:55)"]
+    assert sleeps == [300]  # 300 秒分段后醒来发现跨 23:55,立即终结
+
+
 def test_idle_pass_sleeps_in_segments_with_heartbeat(monkeypatch):
     sent = _capture_send(monkeypatch)
     _stub_shutdown(monkeypatch, False)

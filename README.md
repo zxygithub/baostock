@@ -384,7 +384,7 @@ stocks:
   - **问题根因**：分红/复权/报表循环逐请求 `time.sleep(batch_sleep)`（1 秒/次），Phase 11 每晚 16,022 次请求中约 4.5 小时是纯休眠（整趟 6~7.5 小时，网络实际仅约 1 小时，逐请求间隔 1.2 秒 vs K 线批内 0.16 秒）；趟次调度"无新增固定睡 90 分钟"导致白天长时间无动作、盘中新数据最多延迟 90 分钟才复检
   - **修复方案**：(a) 新增 `helpers.RequestPacer`，分红/复权/报表四处循环的逐请求休眠改为每 `batch_size`（200）次请求停 `batch_sleep`（1 秒），与 K 线批内限速同款（预期夜间整趟 6~7.5 小时 → 约 2 小时）；(b) 趟次间隔自适应 `compute_pass_interval_minutes`：有新增→隔 `download.productive_pass_interval_minutes`（10 分钟）下一趟并清零空趟计数，连续空趟指数退避 10/20/40/80… 封顶 `download.idle_pass_interval_minutes`（90 分钟），非正值仍钳位 1 分钟防热循环
   - **上线观察**：分红/复权/报表请求速率升至与 K 线同级（约 5 次/秒，K 线整月该速率无封禁记录）；若出现 error_code 10001011 封禁（monitor 已有 120 分钟退避兜底），可把 `stocks.batch_size` 调小（如 50）降速，无需回滚代码
-  - **测试**：新增 `tests/test_request_pacer.py` 6 例（窗口节奏、窗口为 1、非正窗口钳位、默认走 `time.sleep`、分红循环/报表循环按批限速）；`tests/test_pass_scheduler.py` 新增 5 例（退避序列 10/20/40/80/90、有新增归零、配置默认值）并把"有新增直连下一趟"旧口径改写为"隔基础间隔"；全量 258 例通过
+  - **测试**：新增 `tests/test_request_pacer.py` 6 例（窗口节奏、窗口为 1、非正窗口钳位、默认走 `time.sleep`、分红循环/报表循环按批限速）；`tests/test_pass_scheduler.py` 新增 5 例（退避序列 10/20/40/80/90、有新增归零、配置默认值）并把"有新增直连下一趟"旧口径改写为"隔基础间隔"；另补 23:55 跨停用例与 `base=0` 钳位用例（评审补口）、`batch_sleep` 缺省值对齐 config.yaml（1 秒）；全量 261 例通过
   - 修改文件：`src/utils/helpers.py`、`src/downloaders/dividend_downloader.py`、`src/downloaders/report_downloader.py`、`src/config_loader.py`、`config.yaml`、`tests/`（1 组新增、1 组扩展）、`README.md`、`docs/download_flow.md`、`docs/superpowers/plans/2026-10-28-phase11-pacing-and-adaptive-pass-interval.md`
 - **2026-10-27**：修复退市股自愈分支的永久空探（K 线/指数零新增探测每日一探）
   - **问题根因**：退市股最后一根 K 线在 `out_date` 前一交易日（实测 43 只股票 `库内max = out_date - 1`），自愈条件 `last >= out_date` 永不成立，每趟重复探测；叠加指数末日重探（服务端日线发布滞后），空转趟实测 153 次请求（超出 ≤50 验收口径），日耗约 2.4k 请求
