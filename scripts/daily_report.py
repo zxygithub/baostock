@@ -22,6 +22,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.utils.email_notifier import load_dotenv, load_email_config, send_email
+from src.utils import blacklist
 from src.utils.quota import record_requests
 from src.config_loader import get_daily_request_limit
 
@@ -114,6 +115,14 @@ def get_latest_download_times():
 # ---------------------------------------------------------------------------
 def check_blacklist_status():
     """Check if current IP/account is blacklisted by BaoStock."""
+    # 退避期内零网络探测(组件 6):官方规则明确反复登录会刷新/延长封禁,
+    # 否则日报会在退避期内替我们把封禁续上。直接用标记内容出状态。
+    blocked, remain = blacklist.in_backoff()
+    if blocked:
+        return (
+            "❌ 黑名单",
+            f"IP 处于封禁退避期,剩余 {remain // 60} 分钟(标记 data/.blacklisted)",
+        )
     try:
         lg = bs.login()
         record_requests(1)

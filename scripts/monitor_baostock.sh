@@ -27,7 +27,7 @@ BLACKLIST_FLAG="${DATA_DIR}/.blacklisted"
 # ─── 常量 ───────────────────────────────────────────────────────────────────
 CHECK_INTERVAL=30      # 每次检测间隔（秒）
 CHECK_COUNT=3          # 检测次数
-BLACKLIST_BACKOFF_MINUTES=120  # 封禁退避窗口（分钟）：期内跳过探测，避免探测请求延长封禁
+BLACKLIST_BACKOFF_MINUTES=120  # 退避窗口回落默认值：权威值在 config.yaml api.blacklist_backoff_minutes，由 load_backoff_minutes 读取（决策 3 单一事实源）
 SHUTDOWN_HOUR=23       # 关闭开始小时
 SHUTDOWN_MIN=55        # 关闭开始分钟
 STARTUP_HOUR=0         # 启动小时
@@ -181,6 +181,25 @@ conn.close()
     
     log "INFO" "今日请求计数: $count/$limit"
     return 1  # false, 未达上限
+}
+
+# ─── 退避窗口常量归一（决策 3）：以 config.yaml 为单一事实源 ─────────────
+# monitor 不再自带第二份 120：经 config_loader 读 api.blacklist_backoff_minutes，
+# 读取失败回落上面的默认值并 WARN（config 损坏时 monitor 仍能工作）。
+load_backoff_minutes() {
+    local value
+    value=$(timeout 15 "$PYTHON" -c "
+import sys
+sys.path.insert(0, '${PROJECT_DIR}')
+from src.config_loader import get_blacklist_backoff_minutes
+print(int(get_blacklist_backoff_minutes()))
+" 2>/dev/null)
+    if [[ "$value" =~ ^[0-9]+$ ]] && [ "$value" -gt 0 ]; then
+        echo "$value"
+    else
+        log "WARN" "读取 api.blacklist_backoff_minutes 失败，回落默认 ${BLACKLIST_BACKOFF_MINUTES:-120}"
+        echo "${BLACKLIST_BACKOFF_MINUTES:-120}"
+    fi
 }
 
 # ─── 检查下载进程 ───────────────────────────────────────────────────────────
@@ -437,5 +456,8 @@ main() {
     
     log "INFO" "=== 监控脚本结束 ==="
 }
+
+# 退避窗口以 config.yaml 为准(决策 3);读取失败由 load_backoff_minutes 回落并 WARN
+BLACKLIST_BACKOFF_MINUTES="$(load_backoff_minutes)"
 
 main "$@"
