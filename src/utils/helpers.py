@@ -8,7 +8,11 @@ from collections.abc import Callable, Generator
 from datetime import date, datetime
 from pathlib import Path
 
-from src.config_loader import get_daily_request_limit, get_idle_pass_interval_minutes
+from src.config_loader import (
+    get_daily_request_limit,
+    get_idle_pass_interval_minutes,
+    get_productive_pass_interval_minutes,
+)
 
 
 __all__ = [
@@ -262,6 +266,22 @@ def _sleep_idle_in_segments(
     return False
 
 
+def compute_pass_interval_minutes(new_rows: int, idle_count: int) -> tuple[int, int]:
+    """Return (sleep_minutes, next_idle_count) for the pass scheduler.
+
+    A pass that added rows waits the base interval and resets the idle
+    counter; an idle pass backs off exponentially (base * 2**(idle_count-1))
+    capped at get_idle_pass_interval_minutes(). Non-positive results are
+    clamped to a real 1-minute sleep by _sleep_idle_in_segments.
+    """
+    if new_rows > 0:
+        return get_productive_pass_interval_minutes(), 0
+    idle_count += 1
+    base = get_productive_pass_interval_minutes()
+    cap = get_idle_pass_interval_minutes()
+    return min(base * 2 ** (idle_count - 1), cap), idle_count
+
+
 def run_main_with_report(
     main_fn, logger: logging.Logger | None = None, *, loop: bool = False
 ) -> None:
@@ -273,8 +293,10 @@ def run_main_with_report(
     monitor restarts the fetch — so it must not send.
 
     ``loop=True`` (pass scheduler, used by download_all.py): keep running
-    passes until SystemExit(1) or the 23:55 shutdown, sleeping between idle
-    passes in ≤300 s segments with a heartbeat log per segment.
+    passes until SystemExit(1) or the 23:55 shutdown, sleeping between passes
+    in ≤300 s segments with a heartbeat log per segment. Interval is adaptive:
+    base interval after a pass that added rows, exponential backoff capped at
+    ``idle_pass_interval_minutes`` on consecutive idle passes.
     """
     from src.downloaders.base import is_past_shutdown_time
 
@@ -297,6 +319,7 @@ def run_main_with_report(
         return
 
     log = logger or logging.getLogger("baostock")
+    idle_count = 0
     while True:
         reason = None
         try:
@@ -310,12 +333,18 @@ def run_main_with_report(
                 new_rows = 0
             if is_past_shutdown_time():
                 reason = "达到每日停止时间(23:55)"
-            elif new_rows > 0:
-                continue
-            elif _sleep_idle_in_segments(
-                get_idle_pass_interval_minutes(), log, is_past_shutdown_time
-            ):
-                reason = "达到每日停止时间(23:55)"
+            else:
+                minutes, idle_count = compute_pass_interval_minutes(
+                    new_rows, idle_count
+                )
+                log.info(
+                    "本趟新增 %d 行 → %d 分钟后下一趟(连续空趟 %d)",
+                    new_rows,
+                    minutes,
+                    idle_count,
+                )
+                if _sleep_idle_in_segments(minutes, log, is_past_shutdown_time):
+                    reason = "达到每日停止时间(23:55)"
         if reason is not None:
             send_daily_report(reason, logger)
             return

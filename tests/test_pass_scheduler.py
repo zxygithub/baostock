@@ -37,9 +37,10 @@ def test_loop_false_runs_single_pass(monkeypatch):
     assert sent == []
 
 
-def test_productive_pass_runs_immediately(monkeypatch):
+def test_productive_pass_sleeps_base_interval(monkeypatch):
     sent = _capture_send(monkeypatch)
     _stub_shutdown(monkeypatch, False)
+    monkeypatch.setattr(helpers, "get_productive_pass_interval_minutes", lambda: 10)
     sleeps = []
     monkeypatch.setattr(helpers.time, "sleep", lambda s: sleeps.append(s))
 
@@ -54,8 +55,56 @@ def test_productive_pass_runs_immediately(monkeypatch):
     helpers.run_main_with_report(main, loop=True)
 
     assert calls["n"] == 2
-    assert sleeps == []
+    assert sum(sleeps) == 10 * 60  # 有新增也须隔基础间隔再下一趟,不再直连
+    assert all(s <= 300 for s in sleeps)
     assert sent == ["达到每日请求上限(46000)"]
+
+
+def test_backoff_resets_after_productive_pass(monkeypatch):
+    sent = _capture_send(monkeypatch)
+    _stub_shutdown(monkeypatch, False)
+    monkeypatch.setattr(helpers, "get_productive_pass_interval_minutes", lambda: 10)
+    monkeypatch.setattr(helpers, "get_idle_pass_interval_minutes", lambda: 90)
+    sleeps = []
+    monkeypatch.setattr(helpers.time, "sleep", lambda s: sleeps.append(s))
+
+    observed = []  # 每趟开始前的累计睡眠秒数
+    seq = [0, 0, 5, 0]
+
+    def main():
+        observed.append(sum(sleeps))
+        if seq:
+            return seq.pop(0)
+        raise SystemExit(1)
+
+    helpers.run_main_with_report(main, loop=True)
+
+    deltas = [observed[i + 1] - observed[i] for i in range(len(observed) - 1)]
+    assert deltas == [10 * 60, 20 * 60, 10 * 60, 10 * 60]
+    assert sent == ["达到每日请求上限(46000)"]
+
+
+def test_compute_interval_productive_resets_idle_count(monkeypatch):
+    monkeypatch.setattr(helpers, "get_productive_pass_interval_minutes", lambda: 10)
+    monkeypatch.setattr(helpers, "get_idle_pass_interval_minutes", lambda: 90)
+    assert helpers.compute_pass_interval_minutes(5, 3) == (10, 0)
+
+
+def test_compute_interval_idle_backoff_doubles_until_cap(monkeypatch):
+    monkeypatch.setattr(helpers, "get_productive_pass_interval_minutes", lambda: 10)
+    monkeypatch.setattr(helpers, "get_idle_pass_interval_minutes", lambda: 90)
+    got = []
+    n = 0
+    for _ in range(6):
+        minutes, n = helpers.compute_pass_interval_minutes(0, n)
+        got.append(minutes)
+    assert got == [10, 20, 40, 80, 90, 90]
+
+
+def test_compute_interval_cap_zero_clamps_in_sleeper(monkeypatch):
+    monkeypatch.setattr(helpers, "get_productive_pass_interval_minutes", lambda: 10)
+    monkeypatch.setattr(helpers, "get_idle_pass_interval_minutes", lambda: 0)
+    assert helpers.compute_pass_interval_minutes(0, 1) == (0, 2)  # 0 交给休眠器钳位到 1 分钟
 
 
 def test_idle_pass_sleeps_in_segments_with_heartbeat(monkeypatch):
@@ -169,3 +218,8 @@ def test_non_positive_interval_clamps_to_min_sleep(monkeypatch):
 def test_idle_interval_default(monkeypatch):
     monkeypatch.setattr(config_loader, "get_download_config", lambda: {})
     assert config_loader.get_idle_pass_interval_minutes() == 90
+
+
+def test_productive_interval_default(monkeypatch):
+    monkeypatch.setattr(config_loader, "get_download_config", lambda: {})
+    assert config_loader.get_productive_pass_interval_minutes() == 10

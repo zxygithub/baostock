@@ -119,6 +119,11 @@ def get_idle_pass_interval_minutes() -> int:
     return get_download_config().get("idle_pass_interval_minutes", 90)
 
 
+def get_productive_pass_interval_minutes() -> int:
+    """Get the delay (minutes) before the next pass after one that added rows."""
+    return get_download_config().get("productive_pass_interval_minutes", 10)
+
+
 def is_download_enabled(category: str, subcategory: str | None = None) -> bool:
     """Check if a download category is enabled.
 
