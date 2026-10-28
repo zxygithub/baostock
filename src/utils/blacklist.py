@@ -51,7 +51,12 @@ def in_backoff(
     if _bypassed():
         return False, 0
 
-    window = get_blacklist_backoff_minutes() * 60
+    window_raw = get_blacklist_backoff_minutes()
+    try:
+        window = float(window_raw) * 60  # 配置被写成 "120" 也要按数值处理
+    except (TypeError, ValueError):
+        logger.warning(f"api.blacklist_backoff_minutes 非数值({window_raw!r}),黑名单闸门视为禁用")
+        return False, 0
     if window <= 0:
         logger.warning("api.blacklist_backoff_minutes <= 0,黑名单闸门视为禁用")
         return False, 0
@@ -86,14 +91,19 @@ def arm(source: str, detail: str = "") -> None:
     payload: dict = {}
     try:
         if path.exists():
-            payload = json.loads(path.read_text(encoding="utf-8")) or {}
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            payload = loaded if isinstance(loaded, dict) else {}
     except (OSError, ValueError) as e:
         logger.warning(f"读取既有黑名单标记失败,按全新标记写入: {e}")
         payload = {}
 
+    try:
+        hits = int(payload.get("consecutive_hits", 0))
+    except (TypeError, ValueError):
+        hits = 0
     payload.setdefault("first_banned_at", now_iso)
     payload["last_banned_at"] = now_iso
-    payload["consecutive_hits"] = int(payload.get("consecutive_hits", 0)) + 1
+    payload["consecutive_hits"] = hits + 1
     payload["source"] = source
     payload["detail"] = detail
 

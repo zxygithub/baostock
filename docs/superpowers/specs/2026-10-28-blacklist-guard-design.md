@@ -417,3 +417,5 @@ Task 7 说明：组件 3 已让封禁不再以 RuntimeError 形式击穿 K 线�
 3. **monitor 退避常量归一的实现形态**（决策 3）：用独立的 `load_backoff_minutes()`（python 一行读 `config_loader`，失败回落 120 + WARN）而非塞进 `check_connectivity` 的 heredoc——该 heredoc 以退出码为契约，混入输出解析更脆；「config.yaml 单一事实源 + 失败回落」的决策语义完整保留。
 4. **部分构造对象的兜底**：`close()` 对 `_blacklisted` 用 `getattr` 兜底、`_last_request_ts` 提供类级默认值——既有测试夹具以 `object.__new__` 构造部分对象，且 `close()` 有「不得抛」的既有契约；两者均非配置冻结，不违反 §3.4。
 5. **测试隔离**：`tests/conftest.py` autouse 旁路黑名单闸（`set_bypass(True)`），避免真实 `data/.blacklisted` 存在时套件被打红；闸门类用例显式 `set_bypass(False)` 并把标记指到 tmp_path。
+6. **退出码口径**（§3.2「非 0」的具体化）：`1` = 配额上限、`2` = 启动闸拒绝启动、`3` = 查询期熔断终止（loop=True 被封终止不得退出 0，否则 `start.sh` 会误标 DONE、外部调度误判成功）。
+7. **翻页计数按数值比较**：真实 `ResultData.cur_page_num` 是字符串（`body_arr[4]`），字典序比较会在 9→10 页边界漏计；实现统一转 int 比较，测试夹具对齐真实形态（字符串页号）。

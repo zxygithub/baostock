@@ -60,10 +60,19 @@ class _ApiResultWrapper:
     def __getattr__(self, name):
         return getattr(self._rs, name)
 
+    @staticmethod
+    def _page_number(rs) -> int:
+        """真实 ResultData 的 cur_page_num 是字符串(body_arr[4]),须数值比较;
+        字典序比较会在 9→10 页边界漏计。异常形态按 0 处理(不计翻页)。"""
+        try:
+            return int(getattr(rs, "cur_page_num", 0))
+        except (TypeError, ValueError):
+            return 0
+
     def next(self):
-        prev_page = getattr(self._rs, "cur_page_num", 0)
+        prev_page = self._page_number(self._rs)
         result = self._rs.next()
-        if self._on_page is not None and getattr(self._rs, "cur_page_num", 0) > prev_page:
+        if self._on_page is not None and self._page_number(self._rs) > prev_page:
             self._on_page()  # 满页自动取下一页:服务端计一次请求,本地必须同步计
         if result:
             self._row_count += 1

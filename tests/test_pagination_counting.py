@@ -110,3 +110,26 @@ def test_quota_hit_mid_pagination_exits_1(tmp_path, monkeypatch):
         _consume(dl.query_with_retry(fake_query))
 
     assert exc.value.code == 1  # 分页途中触顶:退出码 1(配额上限),不得混淆为 2
+
+
+class StringPageRs(PaginatingRs):
+    """对齐 baostock ResultData 真实形态:cur_page_num 是字符串(body_arr[4])。"""
+
+    def next(self):
+        if self._served >= self._total:
+            return False
+        self._served += 1
+        if self._served > self._page_size * int(self.cur_page_num):
+            self.cur_page_num = str(int(self.cur_page_num) + 1)
+        return True
+
+
+def test_string_page_numbers_count_every_turn(tmp_path, monkeypatch):
+    """真实 resultset 的 cur_page_num 是字符串,按字典序比较会漏计(如 "10">"9" 为假)。"""
+    dl = _make_dl(tmp_path)
+    rs = StringPageRs(total_rows=25, page_size=2)  # 13 页 → 12 次翻页
+    fake_query = _stub_query(monkeypatch, dl, rs)
+
+    _consume(dl.query_with_retry(fake_query))
+
+    assert _today_count(dl) == 13  # 1 查询 + 12 翻页,误差 0

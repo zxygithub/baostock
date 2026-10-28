@@ -137,3 +137,29 @@ def test_in_backoff_never_touches_marker(marker):
     after = marker.stat().st_mtime
 
     assert after == before
+
+
+def test_arm_tolerates_non_object_json(marker, monkeypatch):
+    """组件 1 契约:arm 写失败只 WARN 不抛;标记被手工改成非对象 JSON 也不得崩。"""
+    monkeypatch.setattr(blacklist, "marker_path", lambda: marker)
+    marker.write_text("[1]")  # 合法 JSON 但非对象
+
+    blacklist.arm(source="query", detail="x")  # 不得抛
+
+    import json as _json
+
+    payload = _json.loads(marker.read_text())
+    assert payload["consecutive_hits"] == 1
+
+
+def test_quoted_window_value_does_not_crash_gate(marker, monkeypatch):
+    """§4 ②:配置值被写成引号字符串("120")也不得让闸门崩溃——fail-open 或按数值处理。"""
+    now = time.time()
+    marker.write_text("{}")
+    _set_mtime(marker, now - 30)
+    monkeypatch.setattr(blacklist, "get_blacklist_backoff_minutes", lambda: "120")
+
+    blocked, remain = blacklist.in_backoff(marker=marker, now=now)
+
+    assert blocked is True
+    assert remain == WINDOW - 30  # "120" 应按 120 分钟处理

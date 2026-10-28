@@ -340,9 +340,11 @@ def run_main_with_report(
         try:
             new_rows = main_fn()
         except BlacklistedError:
-            # 决策 2:被封立即终止进程;沿用既有裁定——不发日报
-            log.warning("命中黑名单熔断,终止趟次调度(不发日报;等待退避期过后重试)")
-            return
+            # 决策 2:被封立即终止进程;沿用既有裁定——不发日报。
+            # spec §3.2:退出码须非 0(1=配额,2=启动闸,3=熔断终止),
+            # 不得静默退出 0,否则 start.sh 会误标 DONE、外部调度误判成功。
+            log.warning("命中黑名单熔断,终止趟次调度(退出码 3;不发日报;等待退避期过后重试)")
+            raise SystemExit(3)
         except SystemExit as e:
             if e.code != 1:
                 raise

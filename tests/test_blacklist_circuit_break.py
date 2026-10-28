@@ -206,8 +206,8 @@ def test_api_call_blacklist_breaks(tmp_path, monkeypatch):
     assert len(calls) == 1
 
 
-def test_loop_true_blacklisted_terminates_without_report(monkeypatch):
-    """决策 2:常驻模式被封即终止,不发日报(沿用既有裁定)。"""
+def test_loop_true_blacklisted_exits_nonzero(monkeypatch):
+    """spec §3.2:loop=True 被封终止的退出码必须非 0(1=配额,2=闸,3=熔断终止)。"""
     sent = []
     monkeypatch.setattr(
         helpers, "send_daily_report", lambda reason, logger=None: sent.append(reason)
@@ -219,7 +219,9 @@ def test_loop_true_blacklisted_terminates_without_report(monkeypatch):
         calls.append(1)
         raise BlacklistedError("黑名单用户")
 
-    helpers.run_main_with_report(main, loop=True)
+    with pytest.raises(SystemExit) as exc:
+        helpers.run_main_with_report(main, loop=True)
 
     assert calls == [1]  # 终止,不再开下一趟
+    assert exc.value.code not in (None, 0)  # 不得静默退出 0(start.sh 会误标 DONE)
     assert sent == []  # 不发日报

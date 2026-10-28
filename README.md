@@ -302,7 +302,7 @@ from src.config_loader import (
 `src/utils/blacklist.py` 为标记与退避判定的唯一事实源(跨平台,Python 判定不再依赖 GNU bash)。三道闸:
 
 1. **启动退避闸**:`data/.blacklisted` 标记在 `api.blacklist_backoff_minutes`(默认 120)窗口内 → **不发起任何网络请求**,退出码 `2`(`1` = 配额上限,两者不混)。报错自带解法:删除标记,或加 `--ignore-blacklist` / 环境变量 `BAOSTOCK_IGNORE_BLACKLIST=1`。闸判**年龄**不判存在性——窗口一过自动放行;标记缺失/读失败/时钟回拨/JSON 损坏(monitor `touch` 形态)一律 fail-open,绝不把下载永久锁死。
-2. **查询期熔断**:服务端返回 `10001011` → 记标记、保住内存批次、立即终止(`BlacklistedError`,不重试、不再发 logout 但关 socket)。被封后 0 次后续请求;登录成功即清标记(解封自愈);**退避期内绝不 touch 标记**——否则窗口会被自己无限续期。
+2. **查询期熔断**:服务端返回 `10001011` → 记标记、保住内存批次、立即终止(`BlacklistedError`,退出码 **3**;不重试、不再发 logout 但关 socket)。被封后 0 次后续请求;登录成功即清标记(解封自愈);**退避期内绝不 touch 标记**——否则窗口会被自己无限续期。退出码约定:`1` 配额上限、`2` 启动闸拒绝启动、`3` 查询期熔断终止。
 3. **请求频率闸**:`api.min_request_interval`(默认 0.30s)为每请求硬下限,与既有批间 `batch_sleep`/`RequestPacer` 取最大值语义(不叠加等待),避免"短时高频请求/循环批量下载未加延时"触发官方封禁规则;分页翻页**逐页计数**,配额统计不失真。
 
 日报在退避期内**零网络探测**(直接用标记出状态,不会替我们把封禁续上);monitor 退避窗口同样从 `config.yaml` 读取(单一事实源,读取失败回落 120 并 WARN)。
