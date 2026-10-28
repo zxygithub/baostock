@@ -4,7 +4,7 @@ import logging
 import subprocess
 import sys
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from datetime import date, datetime
 from pathlib import Path
 
@@ -182,6 +182,34 @@ def batch_iterable(items: list, batch_size: int) -> Generator[list, None, None]:
     """
     for i in range(0, len(items), batch_size):
         yield items[i : i + batch_size]
+
+
+class RequestPacer:
+    """Batch pacing for per-request loops: sleep once every N requests.
+
+    Replaces per-request ``time.sleep(batch_sleep)`` (which cost hours of pure
+    sleeping in the dividend/adjust/report phases) with the same pacing the
+    K-line batches use: one ``sleep_seconds`` pause per ``requests_per_sleep``
+    API requests.
+    """
+
+    def __init__(
+        self,
+        requests_per_sleep: int,
+        sleep_seconds: float,
+        sleep: Callable[[float], None] | None = None,
+    ):
+        self.every = max(int(requests_per_sleep), 1)  # 非正窗口视为 1,不得除零
+        self.seconds = sleep_seconds
+        self._sleep = sleep
+        self._count = 0
+
+    def tick(self) -> None:
+        """Count one API request; sleep after every ``requests_per_sleep``."""
+        self._count += 1
+        if self._count % self.every == 0:
+            # sleep=None 时调用期解析 time.sleep,保证测试可替换
+            (self._sleep or time.sleep)(self.seconds)
 
 
 def send_daily_report(reason: str, logger: logging.Logger | None = None) -> None:

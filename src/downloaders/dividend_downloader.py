@@ -1,14 +1,13 @@
 import baostock as bs
 import pandas as pd
 import logging
-import time
 from datetime import datetime, timedelta
 from tqdm import tqdm
 
 from src.downloaders.base import BaseDownloader
 from src.config import RENAME_DIVIDEND, RENAME_ADJUST_FACTOR
-from src.config_loader import get_batch_sleep, get_financial_start_year
-from src.utils.helpers import fetch_all_rows
+from src.config_loader import get_batch_size, get_batch_sleep, get_financial_start_year
+from src.utils.helpers import RequestPacer, fetch_all_rows
 
 _PLACEHOLDER_HEAL_BATCH = 1000
 
@@ -26,7 +25,7 @@ class DividendDownloader(BaseDownloader):
             end_year = datetime.now().year
 
         total_rows = 0
-        batch_sleep = get_batch_sleep()
+        pacer = RequestPacer(get_batch_size(), get_batch_sleep())
         current_year = datetime.now().year
         recent_years = {current_year, current_year - 1}
 
@@ -75,7 +74,7 @@ class DividendDownloader(BaseDownloader):
                 rows = fetch_all_rows(rs)
             except RuntimeError as e:
                 self.logger.warning(f"dividend: skipping {code} {year} {year_type} after retries: {e}")
-                time.sleep(batch_sleep)
+                pacer.tick()
                 continue
             for row in rows:
                 all_rows.append(list(row) + [year, year_type])
@@ -86,7 +85,7 @@ class DividendDownloader(BaseDownloader):
                     columns=['code', 'divid_operate_date', 'year', 'year_type']
                 )
                 placeholder_dfs.append(df)
-                time.sleep(batch_sleep)
+                pacer.tick()
                 continue
 
             columns = rs.fields + ["year", "year_type"]
@@ -104,7 +103,7 @@ class DividendDownloader(BaseDownloader):
             )
             self.conn.commit()
             total_rows += len(df)
-            time.sleep(batch_sleep)
+            pacer.tick()
 
             # Flush placeholders in batches
             if len(placeholder_dfs) >= BATCH_SIZE:
@@ -260,7 +259,7 @@ class DividendDownloader(BaseDownloader):
         )
 
         total_rows = 0
-        batch_sleep = get_batch_sleep()
+        pacer = RequestPacer(get_batch_size(), get_batch_sleep())
         for code in tqdm(stale_codes, desc="Adjust factor"):
             if self._interrupted:
                 break
@@ -272,14 +271,14 @@ class DividendDownloader(BaseDownloader):
                 rows = fetch_all_rows(rs)
             except RuntimeError as e:
                 self.logger.warning(f"adjust_factor: skipping {code} after retries: {e}")
-                time.sleep(batch_sleep)
+                pacer.tick()
                 continue
             # 探测成功（含空结果）：记下 af_uncovered 今日已探。全量历史刚拉过，
             # 未覆盖事件确实已查，当日无需再为该 code 重探。
             self.mark_probed("af_uncovered", code)
             if not rows:
                 self._mark_adjust_checked(code)
-                time.sleep(batch_sleep)
+                pacer.tick()
                 continue
             df = pd.DataFrame(rows, columns=rs.fields)
             df.rename(columns=RENAME_ADJUST_FACTOR, inplace=True)
@@ -294,7 +293,7 @@ class DividendDownloader(BaseDownloader):
             )
             self.conn.commit()
             total_rows += len(df)
-            time.sleep(batch_sleep)
+            pacer.tick()
         return total_rows
 
     def download_all_dividend(
