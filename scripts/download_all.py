@@ -17,6 +17,7 @@ from src.config_loader import (
     get_minute_frequencies,
     is_download_enabled,
 )
+from src.utils import blacklist
 from src.db_manager import DBManager
 from src.utils.helpers import run_main_with_report, setup_logging
 from src.utils.validator import DataValidator
@@ -111,7 +112,14 @@ def main() -> int:
     parser.add_argument("--log-file", default=None, help="Path to log file")
     parser.add_argument("--once", action="store_true", help="只跑一趟即退出")
     parser.add_argument("--force-meta", action="store_true", help="强制刷新元数据")
+    parser.add_argument(
+        "--ignore-blacklist",
+        action="store_true",
+        help="跳过封禁退避闸(确认已解封时使用;等价环境变量 BAOSTOCK_IGNORE_BLACKLIST=1)",
+    )
     args = parser.parse_args()
+    if args.ignore_blacklist:
+        blacklist.set_bypass(True)
 
     logger = setup_logging("baostock", args.log_file)
     cfg = load_config()

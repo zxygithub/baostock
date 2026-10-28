@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import DB_PATH, DAILY_SHUTDOWN_TIME
 from src.db_manager import DBManager
+from src.utils import blacklist
 from src.utils.helpers import run_main_with_report, setup_logging
 from src.downloaders.base import is_past_shutdown_time
 from src.downloaders.meta_downloader import MetaDownloader
@@ -22,7 +23,14 @@ from src.utils.helpers import get_current_quarter
 def main():
     parser = argparse.ArgumentParser(description="BaoStock daily incremental update")
     parser.add_argument("--log-file", default=None, help="Path to log file")
+    parser.add_argument(
+        "--ignore-blacklist",
+        action="store_true",
+        help="跳过封禁退避闸(确认已解封时使用;等价环境变量 BAOSTOCK_IGNORE_BLACKLIST=1)",
+    )
     args = parser.parse_args()
+    if args.ignore_blacklist:
+        blacklist.set_bypass(True)
 
     logger = setup_logging("baostock", args.log_file)
     logger.info("=== BaoStock Daily Incremental Update ===")

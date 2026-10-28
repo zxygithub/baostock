@@ -13,6 +13,7 @@ from src.config_loader import (
     get_idle_pass_interval_minutes,
     get_productive_pass_interval_minutes,
 )
+from src.utils import blacklist
 
 
 __all__ = [
@@ -300,6 +301,14 @@ def run_main_with_report(
     """
     from src.downloaders.base import is_past_shutdown_time
 
+    log = logger or logging.getLogger("baostock")
+
+    # 启动闸(组件 2):封禁退避期内不发起任何网络请求,退出码 2
+    blocked, remain = blacklist.in_backoff()
+    if blocked:
+        log.error(blacklist.blocked_message(remain))
+        raise SystemExit(2)
+
     if not loop:
         reason = None
         try:
@@ -321,6 +330,11 @@ def run_main_with_report(
     log = logger or logging.getLogger("baostock")
     idle_count = 0
     while True:
+        # 趟次顶部闸:中途被 monitor 等外部方标记封禁时同样止步(每趟一次)
+        blocked, remain = blacklist.in_backoff()
+        if blocked:
+            log.error(blacklist.blocked_message(remain))
+            raise SystemExit(2)
         reason = None
         try:
             new_rows = main_fn()

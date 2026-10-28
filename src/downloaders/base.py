@@ -10,6 +10,7 @@ from pathlib import Path
 
 from src.config import DAILY_SHUTDOWN_TIME
 from src.config_loader import get_socket_timeout, get_daily_request_limit
+from src.utils import blacklist
 
 
 def is_past_shutdown_time() -> bool:
@@ -91,6 +92,11 @@ class BaseDownloader:
         self._interrupted: bool = False
         self._limit_exceeded: bool = False
         self.new_rows: int = 0  # 累计"此前不在库中的真实数据行"（由调用方 += count_new_rows(...)）
+        # 启动闸(组件 2):封禁退避期内构造下载器立即止步,不发 login
+        blocked, remain = blacklist.in_backoff()
+        if blocked:
+            self.logger.error(blacklist.blocked_message(remain))
+            raise SystemExit(2)
         self._check_daily_limit()
         self.login()
 

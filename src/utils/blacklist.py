@@ -120,3 +120,14 @@ def describe() -> str:
     if not blocked:
         return "黑名单标记: 无或已过期(可正常请求)"
     return f"黑名单标记: 退避中,剩余 {remain // 60} 分钟(标记 {marker_path()})"
+
+
+def blocked_message(remain: int) -> str:
+    """启动闸报错文案——自带解法(设计方案组件 2 固定文案)。"""
+    window_min = get_blacklist_backoff_minutes()
+    return (
+        f"IP 处于封禁退避期,剩余 {(remain + 59) // 60} 分钟"
+        f"(标记 {marker_path()},窗口 {window_min} 分钟)。\n"
+        "        退避期内不发起任何网络请求——官方规则明确反复登录会刷新/延长封禁。\n"
+        f"        确认已解封可立即重试:删除 {marker_path()},或加 --ignore-blacklist。"
+    )
