@@ -159,13 +159,13 @@
 │     for code in codes:                                  │
 │       query_performance_express_report(                 │
 │         code, start_date, end_date)                     │
-│       sleep(2s)                                         │
+│       每 batch_size 次请求后 sleep(batch_sleep)           │
 │                                                         │
 │  2. forecast_report       ← query_forecast_report()     │
 │     for code in codes:                                  │
 │       query_forecast_report(                            │
 │         code, start_date, end_date)                     │
-│       sleep(2s)                                         │
+│       每 batch_size 次请求后 sleep(batch_sleep)           │
 │                                                         │
 │  start_date = get_reports_start_date() (配置)            │
 │  end_date   = 昨天                                      │
@@ -182,12 +182,12 @@
 │       for year in range(2007, current_year+1):          │
 │         for year_type in [report, operate]:             │
 │           query_dividend_data(code, year, year_type)    │
-│       sleep(2s)                                         │
+│       每 batch_size 次请求后 sleep(batch_sleep)           │
 │                                                         │
 │  2. adjust_factor         ← query_adjust_factor()       │
 │     for code in codes:                                  │
 │       query_adjust_factor(code, start_date, end_date)   │
-│       sleep(2s)                                         │
+│       每 batch_size 次请求后 sleep(batch_sleep)           │
 │                                                         │
 │  API: 5,524 × 20 × 2 + 5,524 = ~226,484 次            │
 └──────────────────────┬──────────────────────────────────┘
@@ -204,8 +204,8 @@
 │             本趟结束 (main 返回本趟新增行数)              │
 │  • 清理 checkpoint 文件                                  │
 │  • 输出各阶段下载统计与"本趟新增数据行: N"               │
-│  • 有新增 → 立即下一趟                                    │
-│  • 无新增 → 休眠 90 分钟后复检(分段心跳)                  │
+│  • 有新增 → 10 分钟后复检（自适应间隔）                   │
+│  • 无新增 → 指数退避 10/20/40/80…封顶 90 分钟(分段心跳)   │
 │  • 23:55 / 请求上限 → 终结发日报(--once 则直接退出)       │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -695,8 +695,8 @@ for code, year, quarter in all_combinations:
 |------|--------|------|------|
 | `daily_request_limit` | 46,000 | config.yaml | 每日 API 请求上限 |
 | `socket_timeout` | 30 | config.yaml | 网络超时（秒） |
-| `batch_size` | 200 | config.yaml | K 线每批处理的股票数 |
-| `batch_sleep` | 2 | config.yaml | 批次间休眠时间（秒） |
+| `batch_size` | 200 | config.yaml | 每批处理股票数；同时是限速窗口（每 N 次请求暂停一次） |
+| `batch_sleep` | 1 | config.yaml | 每个限速窗口后的停顿（秒；分红/复权/报表/K 线同款节奏） |
 | `stocks.filter` | type=1 AND status=1 | config.yaml | 股票筛选条件（SQL WHERE） |
 | `kline.daily.adjustflags` | [1, 2, 3] | config.yaml | 日线复权方式 |
 | `kline.minute.adjustflags` | [3] | config.yaml | 分钟线复权方式（默认仅不复权） |
@@ -704,7 +704,8 @@ for code, year, quarter in all_combinations:
 | `financial.start_year` | 2007 | config.yaml | 财务数据起始年份 |
 | `reports.start_date` | 2003-01-01 | config.yaml | 公司报告起始日期 |
 | `index_kline.start_date` | 2006-01-01 | config.yaml | 指数 K 线起始日期 |
-| `download.idle_pass_interval_minutes` | 90 | config.yaml | 无新增趟次间的休眠分钟数 |
+| `download.productive_pass_interval_minutes` | 10 | config.yaml | 有新增数据趟次后的下一趟间隔分钟数 |
+| `download.idle_pass_interval_minutes` | 90 | config.yaml | 空趟退避封顶分钟数（连续空趟指数退避 10/20/40/80…） |
 | `FINANCIAL_SLEEP` | 0.5 | src/config.py | 财务数据每次调用间隔 |
 | `LOGIN_REFRESH_INTERVAL` | 900 | src/config.py | 会话刷新间隔（15分钟） |
 | `MAX_RETRIES` | 3 | src/config.py | 查询失败重试次数 |
@@ -718,13 +719,15 @@ loop:
   new_rows = main()            # 一趟 = Phase 2~11,返回本趟新增行数
   SystemExit(1)       → 终结:达到每日请求上限,发日报
   已过 23:55          → 终结:达到每日停止时间,发日报
-  new_rows > 0       → 立即下一趟(数据还在来)
-  否则                → 休眠 90 分钟后复检
+  new_rows > 0       → 休眠 productive_pass_interval_minutes(默认 10)后下一趟,空趟计数归零
+  否则(连续空趟 n)   → 指数退避 min(base·2^(n-1), idle_pass_interval_minutes) 后复检
+                       (base=10:10/20/40/80… 封顶 90 分钟)
 ```
 
 - `main()` 返回值为本趟新增行数（写库前精确判重，非拉取行数）；每趟收尾打一行 `本趟新增数据行: N`
+- 每次休眠前打一行 `本趟新增 N 行 → M 分钟后下一趟(连续空趟 k)`,便于观察调度状态
 - 休眠按 ≤5 分钟分段，每段写"休眠心跳"日志并醒来检查 23:55——静默长睡会被 monitor 的 15 分钟日志静默阈值误判为卡死
-- 休眠间隔 `download.idle_pass_interval_minutes`（默认 90），非正值钳位到 1 分钟防热循环
+- 间隔由 `compute_pass_interval_minutes(new_rows, idle_count)` 计算：有新增→基础间隔并清零空趟计数；空趟→指数退避，封顶 `download.idle_pass_interval_minutes`（默认 90）；非正值钳位到 1 分钟防热循环
 
 **新增行计数规则（生产性判定）：**
 

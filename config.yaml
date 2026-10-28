@@ -76,8 +76,8 @@ download:
 # ---------------------------------------------------------------------------
 stocks:
   filter: "type=1 AND status=1"  # SQL filter for stock selection
-  batch_size: 200  # stocks per batch for downloads
-  batch_sleep: 1  # seconds to sleep between batches
+  batch_size: 200  # stocks per batch; also the pacing window (pause once per N API requests)
+  batch_sleep: 1  # seconds to pause after each pacing window (K-line/dividend/adjust/report)
 
 # ---------------------------------------------------------------------------
 # Email reporting (for daily_report.py / backup_to_baidu.py)
