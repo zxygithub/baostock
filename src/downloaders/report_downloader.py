@@ -1,14 +1,13 @@
 import baostock as bs
 import pandas as pd
 import logging
-import time
 from datetime import datetime
 from tqdm import tqdm
 
 from src.downloaders.base import BaseDownloader
 from src.config import RENAME_PERFORMANCE_EXPRESS, RENAME_FORECAST_REPORT
-from src.config_loader import get_reports_start_date, get_batch_sleep
-from src.utils.helpers import fetch_all_rows
+from src.config_loader import get_reports_start_date, get_batch_size, get_batch_sleep
+from src.utils.helpers import RequestPacer, fetch_all_rows
 
 
 class ReportDownloader(BaseDownloader):
@@ -31,7 +30,7 @@ class ReportDownloader(BaseDownloader):
             start_date = get_reports_start_date()
 
         total_rows = 0
-        batch_sleep = get_batch_sleep()
+        pacer = RequestPacer(get_batch_size(), get_batch_sleep())
         
         recently_queried = self._get_recently_queried_codes("performance_express", days=7)
         if recently_queried:
@@ -62,7 +61,7 @@ class ReportDownloader(BaseDownloader):
                 )
                 df["update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 self.save_df(df, "performance_express", if_exists="upsert")
-                time.sleep(batch_sleep)
+                pacer.tick()
                 continue
             df = pd.DataFrame(rows, columns=rs.fields)
             df.rename(columns=RENAME_PERFORMANCE_EXPRESS, inplace=True)
@@ -71,7 +70,7 @@ class ReportDownloader(BaseDownloader):
                 df, "performance_express", ["code", "performance_exp_pub_date"])
             self.save_df(df, "performance_express", if_exists="upsert")
             total_rows += len(df)
-            time.sleep(batch_sleep)
+            pacer.tick()
         return total_rows
 
     def download_forecast_report(
@@ -84,7 +83,7 @@ class ReportDownloader(BaseDownloader):
             start_date = get_reports_start_date()
 
         total_rows = 0
-        batch_sleep = get_batch_sleep()
+        pacer = RequestPacer(get_batch_size(), get_batch_sleep())
 
         recently_queried = self._get_recently_queried_codes("forecast_report", days=7)
         if recently_queried:
@@ -115,7 +114,7 @@ class ReportDownloader(BaseDownloader):
                 )
                 df["update_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 self.save_df(df, "forecast_report", if_exists="upsert")
-                time.sleep(batch_sleep)
+                pacer.tick()
                 continue
             df = pd.DataFrame(rows, columns=rs.fields)
             df.rename(columns=RENAME_FORECAST_REPORT, inplace=True)
@@ -124,7 +123,7 @@ class ReportDownloader(BaseDownloader):
                 df, "forecast_report", ["code", "profit_forecast_exp_pub_date"])
             self.save_df(df, "forecast_report", if_exists="upsert")
             total_rows += len(df)
-            time.sleep(batch_sleep)
+            pacer.tick()
         return total_rows
 
     def download_all_reports(

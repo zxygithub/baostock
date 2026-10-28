@@ -11,6 +11,8 @@ import time
 
 from src.downloaders.dividend_downloader import DividendDownloader
 import src.downloaders.dividend_downloader as div_mod
+from src.downloaders.report_downloader import ReportDownloader
+import src.downloaders.report_downloader as rep_mod
 from src.utils.helpers import RequestPacer
 
 
@@ -92,3 +94,40 @@ def test_dividend_loop_paces_per_batch_not_per_request(tmp_path, monkeypatch):
 
     # 5 次请求、限速窗口 2:仅第 2、4 次后各睡一次;逐请求休眠会是 5 次
     assert sleeps == [1.0, 1.0]
+
+
+# ── 集成:报表循环按批限速 ──────────────────────────────────────────────
+
+PERF_EXPRESS_DDL = (
+    "CREATE TABLE performance_express ("
+    "code TEXT NOT NULL, performance_exp_pub_date TEXT NOT NULL, "
+    "update_time TEXT, "
+    "PRIMARY KEY (code, performance_exp_pub_date))"
+)
+
+
+def test_performance_express_loop_paces_per_batch_not_per_request(tmp_path, monkeypatch):
+    dl = object.__new__(ReportDownloader)
+    dl.db_path = tmp_path / "dl.db"
+    dl._conn = None
+    dl._limit_exceeded = True
+    dl._interrupted = False
+    dl.logger = logging.getLogger("test_request_pacer")
+    dl.new_rows = 0
+    dl.conn.execute(PERF_EXPRESS_DDL)
+    dl.conn.commit()
+
+    monkeypatch.setattr(dl, "query_with_retry", lambda func, **kwargs: object())
+    monkeypatch.setattr(rep_mod, "fetch_all_rows", lambda rs: [])
+    monkeypatch.setattr(rep_mod, "get_batch_size", lambda: 2)
+    monkeypatch.setattr(rep_mod, "get_batch_sleep", lambda: 1.0)
+
+    sleeps = []
+    monkeypatch.setattr(time, "sleep", sleeps.append)
+
+    dl.download_performance_express(
+        ["sh.600000", "sh.600001", "sh.600002"], start_date="2026-01-01",
+    )
+
+    # 3 次请求、限速窗口 2:仅第 2 次后睡一次;逐请求休眠会是 3 次
+    assert sleeps == [1.0]
