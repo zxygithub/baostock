@@ -180,11 +180,14 @@ def main() -> int:
         logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
         return new_rows
 
-    logger.info("Phase 5: Downloading index constituents...")
-    with ComponentDownloader(str(DB_PATH), logger) as dl:
-        comp_results = dl.download_all_components()
-    new_rows += dl.new_rows
-    logger.info(f"Components: {comp_results}")
+    if is_download_enabled("components"):
+        logger.info("Phase 5: Downloading index constituents...")
+        with ComponentDownloader(str(DB_PATH), logger) as dl:
+            comp_results = dl.download_all_components()
+        new_rows += dl.new_rows
+        logger.info(f"Components: {comp_results}")
+    else:
+        logger.info("Phase 5: Components download is disabled in config. Skipping.")
 
     if is_past_shutdown_time():
         logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
@@ -201,20 +204,29 @@ def main() -> int:
             new_rows += dl.new_rows
             logger.info(f"Index K-line: {idx_results}")
 
-        if not args.skip_kline and is_download_enabled("kline", "daily"):
+        if not args.skip_kline and (
+            is_download_enabled("kline", "daily")
+            or is_download_enabled("kline", "weekly")
+            or is_download_enabled("kline", "monthly")
+        ):
             logger.info("Phase 7: Downloading stock K-line (daily/weekly/monthly)...")
             with KlineDownloader(str(DB_PATH), logger) as dl:
                 ckpt_path = DB_PATH.parent / ".download_checkpoint.json"
                 dl.setup_signal_handler(ckpt_path)
                 dl._checkpoint_data = dl._load_checkpoint(ckpt_path)
                 kline_results = {}
-                kline_results["daily"] = dl.download_daily_kline(
-                    codes,
-                    start_date=args.start_date or get_kline_start_date("daily"),
-                    end_date=args.end_date or kline_end_date,
-                )
+                if is_download_enabled("kline", "daily"):
+                    kline_results["daily"] = dl.download_daily_kline(
+                        codes,
+                        start_date=args.start_date or get_kline_start_date("daily"),
+                        end_date=args.end_date or kline_end_date,
+                    )
+                else:
+                    logger.info("Daily K-line is disabled in config. Skipping.")
                 if not dl._interrupted:
-                    if should_update_weekly:
+                    if not is_download_enabled("kline", "weekly"):
+                        logger.info("Weekly K-line is disabled in config. Skipping.")
+                    elif should_update_weekly:
                         # Week-completion guard: BaoStock only returns weekly data for completed
                         # calendar weeks (Mon-Fri). If the Friday of target_date's week hasn't
                         # arrived yet, the week is incomplete and all requests return rows=0.
@@ -237,7 +249,9 @@ def main() -> int:
                     else:
                         logger.info(f"Skipping weekly K-line (latest: {latest_weekly.strftime('%Y-%m-%d')}, {(target_dt - latest_weekly).days}d < 7d).")
                 if not dl._interrupted:
-                    if should_update_monthly:
+                    if not is_download_enabled("kline", "monthly"):
+                        logger.info("Monthly K-line is disabled in config. Skipping.")
+                    elif should_update_monthly:
                         monthly_start_dt = latest_monthly + timedelta(days=1)
                         monthly_start = monthly_start_dt.strftime("%Y-%m-%d")
                         if monthly_start_dt.month == latest_monthly.month and monthly_start_dt.year == latest_monthly.year:
@@ -266,17 +280,17 @@ def main() -> int:
             new_rows += dl.new_rows
             logger.info(f"Stock K-line: {kline_results}")
 
-            if not args.skip_minute and is_download_enabled("kline", "minute"):
-                logger.info("Phase 8: Downloading minute K-line...")
-                with KlineDownloader(str(DB_PATH), logger) as dl:
-                    for freq in get_minute_frequencies():
-                        count = dl.download_minute_kline(
-                            codes,
-                            frequency=freq,
-                            start_date=args.start_date or get_kline_start_date("minute"),
-                        )
-                        logger.info(f"  {freq}min: {count} rows")
-                new_rows += dl.new_rows
+        if not args.skip_minute and is_download_enabled("kline", "minute"):
+            logger.info("Phase 8: Downloading minute K-line...")
+            with KlineDownloader(str(DB_PATH), logger) as dl:
+                for freq in get_minute_frequencies():
+                    count = dl.download_minute_kline(
+                        codes,
+                        frequency=freq,
+                        start_date=args.start_date or get_kline_start_date("minute"),
+                    )
+                    logger.info(f"  {freq}min: {count} rows")
+            new_rows += dl.new_rows
     else:
         logger.info("Skipping Phase 6-8 (K-line) due to no trading day found.")
 

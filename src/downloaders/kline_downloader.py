@@ -15,8 +15,7 @@ from src.config_loader import (
     get_batch_size,
     get_batch_sleep,
     get_kline_start_date,
-    get_nested_value,
-    get_download_config,
+    get_kline_adjustflags,
 )
 from src.utils.helpers import fetch_all_rows, batch_iterable, convert_turn_field
 
@@ -144,7 +143,7 @@ class KlineDownloader(BaseDownloader):
             start_date = get_kline_start_date("daily")
         total_rows = 0
         ipo_dates = self.get_stock_ipo_dates()
-        for adjustflag in [1, 2, 3]:
+        for adjustflag in get_kline_adjustflags("daily"):
             self.logger.info(f"Downloading daily K-line (adjustflag={adjustflag})...")
             resume = self._get_resume_code("all_stock_daily", adjustflag, codes)
             count = self._download_kline_batch(
@@ -174,7 +173,7 @@ class KlineDownloader(BaseDownloader):
             start_date = get_kline_start_date("weekly")
         total_rows = 0
         ipo_dates = self.get_stock_ipo_dates()
-        for adjustflag in [1, 2, 3]:
+        for adjustflag in get_kline_adjustflags("weekly"):
             self.logger.info(f"Downloading weekly K-line (adjustflag={adjustflag})...")
             resume = self._get_resume_code("all_stock_weekly", adjustflag, codes)
             count = self._download_kline_batch(
@@ -204,7 +203,7 @@ class KlineDownloader(BaseDownloader):
             start_date = get_kline_start_date("monthly")
         total_rows = 0
         ipo_dates = self.get_stock_ipo_dates()
-        for adjustflag in [1, 2, 3]:
+        for adjustflag in get_kline_adjustflags("monthly"):
             self.logger.info(f"Downloading monthly K-line (adjustflag={adjustflag})...")
             resume = self._get_resume_code("all_stock_monthly", adjustflag, codes)
             count = self._download_kline_batch(
@@ -236,9 +235,7 @@ class KlineDownloader(BaseDownloader):
         total_rows = 0
         ipo_dates = self.get_stock_ipo_dates()
         # BaoStock minute data only supports adjustflag=3 (no adjustment)
-        adjustflags = get_nested_value(
-            get_download_config(), ["kline", "minute", "adjustflags"], [3]
-        )
+        adjustflags = get_kline_adjustflags("minute")
         for adjustflag in adjustflags:
             self.logger.info(
                 f"Downloading {frequency}min K-line (adjustflag={adjustflag})..."

@@ -392,6 +392,11 @@ stocks:
 
 ## 🔄 更新日志
 
+- **2026-11-06**：下载项按配置开关启用/关闭，K 线复权类型可配置（重实现社区 PR #1 思路，感谢 [murphy-mfr](https://gitee.com/murphy-mfr)）
+  - **问题根因**：`config.yaml`/README 早已声明 `download.*.enabled` 与 `kline.*.adjustflags`，但代码只认少数键——`update_daily.py` 各阶段无开关、日/周/月 K 线复权类型硬编码 `[1,2,3]`；社区 PR #1（gitee）补齐该能力，但分支落后 master 95 个提交且存在语义冲突（草率解冲突会回退月线完整月守卫），另有两个开关缺陷（`with KlineDownloader` 不受开关控制、仍白白 login；weekly/monthly/minute 开关被 `kline.daily` 耦合锁死），且无测试与文档
+  - **修复方案**：在最新 master 上重实现净增量并修缺陷——(1) 新增 `config_loader.get_kline_adjustflags(freq)`：复权类型从配置读取（daily/weekly/monthly 默认 `[1,2,3]`、minute 默认 `[3]`；1=后复权、2=前复权、3=不复权），非法配置（空列表/None/非列表/越界值/未知频率）fail-fast 报错并指明配置键，不再静默跳过或烧配额；(2) `update_daily.py` 全阶段 `is_download_enabled` 门控（components/index_kline/kline.daily|weekly|monthly/financial/dividend），K 线三开关全关时不再构造 KlineDownloader（不白 login、不受配额/黑名单闸牵连）；(3) `download_all.py` Phase 7 改为任一 K 线频率开启即运行、各频率独立门控，Phase 8 分钟线从 daily 开关解耦，Phase 5 补 components 开关；默认配置下行为与此前完全一致（向后兼容）
+  - **测试**：新增 `tests/test_kline_adjustflags.py` 17 例、`tests/test_update_daily_gating.py` 10 例、`tests/test_download_all_gating.py` 9 例（日期钉桩保证周/月线真实触发，逐项带正向对照防真空断言）；全量 336 例通过
+  - 修改文件：`src/config_loader.py`、`src/downloaders/kline_downloader.py`、`scripts/update_daily.py`、`scripts/download_all.py`、`tests/`（3 组新增）、`README.md`、`docs/download_flow.md`
 - **2026-10-28**：IP 黑名单防护三道闸（按 `docs/superpowers/specs/2026-10-28-blacklist-guard-design.md` 落地）
   - **问题根因**：GitHub 用户反馈仅运行 `download_all.py` 即被 BaoStock 拉黑（2,804/48,000 请求时被封，配额闸从未起作用）。缺口：无启动前置闸（封禁期内每次重启真发一发 login，官方规则明确反复登录会延长封禁）；黑名单判断仅是 login 的副产物；被封后 `except RuntimeError: continue` 吞掉错误继续砸服务器（约 1.7 万次）；K 线阶段零请求间隔；分页请求漏计配额；退避仅 monitor（GNU bash）有，Windows/macOS 无保护
   - **修复方案**：(1) 新建 `src/utils/blacklist.py` 为标记/退避判定单一事实源（判年龄不判存在性、fail-open 六条、退避期绝不 touch），启动退避闸挂 `run_main_with_report` 入口/每趟与 `BaseDownloader.__init__`，命中退出码 **2**（与配额上限的 1 区分）；(2) 查询期熔断 `BlacklistedError`（直接继承 `Exception`，防被 `except RuntimeError` 吞掉），首个 `10001011` 即 arm+终止、被封后 0 次后续请求，`close()` 跳过 logout 但关 socket，login 成功即 clear；(3) 请求频率闸 `api.min_request_interval: 0.30`（property 每次现读不冻结，与既有 sleep 取最大值不叠加），并修 K 线空批跳过批间睡眠；(4) 分页逐页计数（单页 1 次、翻 N 页 N+1 次，分页途中触顶同样熔断）；(5) 日报退避期零网络探测，monitor 退避窗口归一 `config.yaml`（读取失败回落 120）；(6) `--ignore-blacklist` / `BAOSTOCK_IGNORE_BLACKLIST=1` 旁路；(7) 顺带修 `_flush_pending_batches` 的 `"unknown"` 兜底（评审问题 E，改为显式报错跳过）
