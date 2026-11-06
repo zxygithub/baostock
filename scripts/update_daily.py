@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.config import DB_PATH, DAILY_SHUTDOWN_TIME
+from src.config_loader import is_download_enabled
 from src.db_manager import DBManager
 from src.utils import blacklist
 from src.utils.helpers import run_main_with_report, setup_logging
@@ -78,86 +79,108 @@ def main():
 
         # 周一更新指数成分股（基于 target_date 判断）
         if datetime.strptime(target_date, "%Y-%m-%d").weekday() == 0:
-            with ComponentDownloader(str(DB_PATH), logger) as dl:
-                dl.download_all_components()
+            if is_download_enabled("components"):
+                with ComponentDownloader(str(DB_PATH), logger) as dl:
+                    dl.download_all_components()
+            else:
+                logger.info("Components download is disabled in config. Skipping.")
 
-        logger.info("Updating index K-line...")
-        with IndexDownloader(str(DB_PATH), logger) as dl:
-            dl.download_index_daily(start_date=index_start, end_date=kline_end_date)
-            dl.download_index_weekly(start_date=index_start, end_date=kline_end_date)
-            dl.download_index_monthly(start_date=index_start, end_date=kline_end_date)
+        if is_download_enabled("index_kline"):
+            logger.info("Updating index K-line...")
+            with IndexDownloader(str(DB_PATH), logger) as dl:
+                dl.download_index_daily(start_date=index_start, end_date=kline_end_date)
+                dl.download_index_weekly(start_date=index_start, end_date=kline_end_date)
+                dl.download_index_monthly(start_date=index_start, end_date=kline_end_date)
+        else:
+            logger.info("Index K-line is disabled in config. Skipping.")
 
         if is_past_shutdown_time():
             logger.warning(f"已达到每日停止时间 ({DAILY_SHUTDOWN_TIME})，跳过后续阶段，程序退出。")
             db.close()
             return
 
-        logger.info("Updating stock K-line (daily/weekly/monthly)...")
-        with KlineDownloader(str(DB_PATH), logger) as dl:
-            # 日线：仅更新到最近交易日
-            if kline_end_date and kline_end_date >= start_date:
-                logger.info(f"Updating daily K-line: {start_date} → {kline_end_date}")
-                dl.download_daily_kline(codes, start_date=start_date, end_date=kline_end_date)
-            else:
-                logger.info(f"No new trading day found. Skipping daily K-line update.")
-
-            # 周线：距上次周线数据 >= 7 天才下载（跨周才有新数据），节省 ~16K 次/天 API 请求
+        if (
+            is_download_enabled("kline", "daily")
+            or is_download_enabled("kline", "weekly")
+            or is_download_enabled("kline", "monthly")
+        ):
+            logger.info("Updating stock K-line (daily/weekly/monthly)...")
             target_dt = datetime.strptime(target_date, "%Y-%m-%d")
-            latest_weekly = datetime.strptime(db.get_max_date("all_stock_weekly") or "1990-12-19", "%Y-%m-%d")
-            should_update_weekly = (target_dt - latest_weekly).days >= 7
-
-            # 月线：仅每月前 3 个交易日下载，节省 ~16K 次/天 API 请求
-            latest_monthly = datetime.strptime(db.get_max_date("all_stock_monthly") or "1990-12-19", "%Y-%m-%d")
-            first_day_of_month = target_dt.replace(day=1)
-            trading_days_so_far = db.get_trading_days_in_range(
-                first_day_of_month.strftime("%Y-%m-%d"),
-                target_date,
-            )
-            should_update_monthly = len(trading_days_so_far) <= 3
-
-            if should_update_weekly:
-                # Week-completion guard: BaoStock only returns weekly data for completed
-                # calendar weeks (Mon-Fri). If the Friday of target_date's week hasn't
-                # arrived yet, the week is incomplete and all requests return rows=0.
-                friday_of_target_week = target_dt + timedelta(days=(4 - target_dt.weekday()))
-                if friday_of_target_week.date() > target_dt.date():
-                    logger.info(
-                        f"Skipping weekly K-line: target {target_date} "
-                        f"({target_dt.strftime('%A')}) is before the Friday of its week "
-                        f"({friday_of_target_week.strftime('%Y-%m-%d')}), week not yet complete."
-                    )
-                else:
-                    weekly_start = (latest_weekly + timedelta(days=1)).strftime("%Y-%m-%d")
-                    if target_date >= weekly_start:
-                        logger.info(f"Updating weekly K-line: {weekly_start} → {target_date}")
-                        dl.download_weekly_kline(codes, start_date=weekly_start, end_date=target_date)
+            with KlineDownloader(str(DB_PATH), logger) as dl:
+                # 日线：仅更新到最近交易日
+                if is_download_enabled("kline", "daily"):
+                    if kline_end_date and kline_end_date >= start_date:
+                        logger.info(f"Updating daily K-line: {start_date} → {kline_end_date}")
+                        dl.download_daily_kline(codes, start_date=start_date, end_date=kline_end_date)
                     else:
-                        logger.info("Weekly K-line is up to date. Skipping.")
-            else:
-                logger.info(f"Skipping weekly K-line (latest: {latest_weekly.strftime('%Y-%m-%d')}, {(target_dt - latest_weekly).days}d < 7d).")
-
-            if should_update_monthly:
-                monthly_start_dt = latest_monthly + timedelta(days=1)
-                monthly_start = monthly_start_dt.strftime("%Y-%m-%d")
-                if monthly_start_dt.month == latest_monthly.month and monthly_start_dt.year == latest_monthly.year:
-                    logger.info(
-                        f"Skipping monthly K-line: start {monthly_start} still in same month as latest data ({latest_monthly.strftime('%Y-%m-%d')}), no complete new month to fetch."
-                    )
+                        logger.info(f"No new trading day found. Skipping daily K-line update.")
                 else:
-                    # Month-completion guard: BaoStock only returns monthly data for
-                    # completed months. If target_date is still in the current month,
-                    # we can only download up to the last day of the previous month.
-                    first_day_of_target_month = target_dt.replace(day=1)
-                    last_day_of_prev_month = first_day_of_target_month - timedelta(days=1)
-                    monthly_end_date = last_day_of_prev_month.strftime("%Y-%m-%d")
+                    logger.info("Daily K-line is disabled in config. Skipping.")
 
-                    if monthly_end_date < monthly_start:
-                        logger.info("Monthly K-line is up to date. Skipping.")
+                # 周线：距上次周线数据 >= 7 天才下载（跨周才有新数据），节省 ~16K 次/天 API 请求
+                if is_download_enabled("kline", "weekly"):
+                    latest_weekly = datetime.strptime(db.get_max_date("all_stock_weekly") or "1990-12-19", "%Y-%m-%d")
+                    should_update_weekly = (target_dt - latest_weekly).days >= 7
+
+                    if should_update_weekly:
+                        # Week-completion guard: BaoStock only returns weekly data for completed
+                        # calendar weeks (Mon-Fri). If the Friday of target_date's week hasn't
+                        # arrived yet, the week is incomplete and all requests return rows=0.
+                        friday_of_target_week = target_dt + timedelta(days=(4 - target_dt.weekday()))
+                        if friday_of_target_week.date() > target_dt.date():
+                            logger.info(
+                                f"Skipping weekly K-line: target {target_date} "
+                                f"({target_dt.strftime('%A')}) is before the Friday of its week "
+                                f"({friday_of_target_week.strftime('%Y-%m-%d')}), week not yet complete."
+                            )
+                        else:
+                            weekly_start = (latest_weekly + timedelta(days=1)).strftime("%Y-%m-%d")
+                            if target_date >= weekly_start:
+                                logger.info(f"Updating weekly K-line: {weekly_start} → {target_date}")
+                                dl.download_weekly_kline(codes, start_date=weekly_start, end_date=target_date)
+                            else:
+                                logger.info("Weekly K-line is up to date. Skipping.")
                     else:
-                        logger.info(f"Updating monthly K-line: {monthly_start} → {monthly_end_date} (previous complete month)")
-                        dl.download_monthly_kline(codes, start_date=monthly_start, end_date=monthly_end_date)
-            else:
-                logger.info(f"Skipping monthly K-line (latest: {latest_monthly.strftime('%Y-%m-%d')}, {len(trading_days_so_far)} trading days into month).")
+                        logger.info(f"Skipping weekly K-line (latest: {latest_weekly.strftime('%Y-%m-%d')}, {(target_dt - latest_weekly).days}d < 7d).")
+                else:
+                    logger.info("Weekly K-line is disabled in config. Skipping.")
+
+                # 月线：仅每月前 3 个交易日下载，节省 ~16K 次/天 API 请求
+                if is_download_enabled("kline", "monthly"):
+                    latest_monthly = datetime.strptime(db.get_max_date("all_stock_monthly") or "1990-12-19", "%Y-%m-%d")
+                    first_day_of_month = target_dt.replace(day=1)
+                    trading_days_so_far = db.get_trading_days_in_range(
+                        first_day_of_month.strftime("%Y-%m-%d"),
+                        target_date,
+                    )
+                    should_update_monthly = len(trading_days_so_far) <= 3
+
+                    if should_update_monthly:
+                        monthly_start_dt = latest_monthly + timedelta(days=1)
+                        monthly_start = monthly_start_dt.strftime("%Y-%m-%d")
+                        if monthly_start_dt.month == latest_monthly.month and monthly_start_dt.year == latest_monthly.year:
+                            logger.info(
+                                f"Skipping monthly K-line: start {monthly_start} still in same month as latest data ({latest_monthly.strftime('%Y-%m-%d')}), no complete new month to fetch."
+                            )
+                        else:
+                            # Month-completion guard: BaoStock only returns monthly data for
+                            # completed months. If target_date is still in the current month,
+                            # we can only download up to the last day of the previous month.
+                            first_day_of_target_month = target_dt.replace(day=1)
+                            last_day_of_prev_month = first_day_of_target_month - timedelta(days=1)
+                            monthly_end_date = last_day_of_prev_month.strftime("%Y-%m-%d")
+
+                            if monthly_end_date < monthly_start:
+                                logger.info("Monthly K-line is up to date. Skipping.")
+                            else:
+                                logger.info(f"Updating monthly K-line: {monthly_start} → {monthly_end_date} (previous complete month)")
+                                dl.download_monthly_kline(codes, start_date=monthly_start, end_date=monthly_end_date)
+                    else:
+                        logger.info(f"Skipping monthly K-line (latest: {latest_monthly.strftime('%Y-%m-%d')}, {len(trading_days_so_far)} trading days into month).")
+                else:
+                    logger.info("Monthly K-line is disabled in config. Skipping.")
+        else:
+            logger.info("Stock K-line (daily/weekly/monthly) is disabled in config. Skipping.")
     else:
         logger.info(f"No new trading data found on or before {target_date}. Skipping K-line update.")
 
@@ -167,28 +190,35 @@ def main():
         return
 
     current_year, current_quarter = get_current_quarter()
-    logger.info(f"Updating financial data for {current_year} Q{current_quarter}...")
-    
-    if current_quarter == 1:
-        start_quarter = 1
-        end_quarter = 1
-    else:
-        start_quarter = current_quarter - 1
-        end_quarter = current_quarter
-    
-    with FinancialDownloader(str(DB_PATH), logger) as dl:
-        dl.download_all_financial(
-            codes,
-            start_year=current_year,
-            end_year=current_year,
-            start_quarter=start_quarter,
-            end_quarter=end_quarter,
-        )
 
-    logger.info(f"Updating dividend data for {current_year}...")
-    with DividendDownloader(str(DB_PATH), logger) as dl:
-        dl.download_dividend(codes, start_year=current_year, end_year=current_year)
-        dl.download_adjust_factor(codes, start_date=start_date)
+    if is_download_enabled("financial"):
+        logger.info(f"Updating financial data for {current_year} Q{current_quarter}...")
+
+        if current_quarter == 1:
+            start_quarter = 1
+            end_quarter = 1
+        else:
+            start_quarter = current_quarter - 1
+            end_quarter = current_quarter
+
+        with FinancialDownloader(str(DB_PATH), logger) as dl:
+            dl.download_all_financial(
+                codes,
+                start_year=current_year,
+                end_year=current_year,
+                start_quarter=start_quarter,
+                end_quarter=end_quarter,
+            )
+    else:
+        logger.info("Financial data is disabled in config. Skipping.")
+
+    if is_download_enabled("dividend"):
+        logger.info(f"Updating dividend data for {current_year}...")
+        with DividendDownloader(str(DB_PATH), logger) as dl:
+            dl.download_dividend(codes, start_year=current_year, end_year=current_year)
+            dl.download_adjust_factor(codes, start_date=start_date)
+    else:
+        logger.info("Dividend data is disabled in config. Skipping.")
 
     db.close()
     logger.info("=== Daily Update Complete ===")

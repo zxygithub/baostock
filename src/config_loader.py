@@ -175,6 +175,46 @@ def get_kline_start_date(freq: str) -> str:
     )
 
 
+def get_kline_adjustflags(freq: str) -> list[int]:
+    """Get adjustflag list for K-line downloads (fail-fast on invalid config).
+
+    Args:
+        freq: Frequency ("daily", "weekly", "monthly", "minute").
+
+    Returns:
+        List of adjustflag values (1: post-adjust, 2: pre-adjust, 3: no adjust).
+        Defaults: daily/weekly/monthly [1, 2, 3], minute [3].
+
+    Raises:
+        ValueError: freq unknown, or download.kline.<freq>.adjustflags is not a
+            non-empty list of valid adjustflag values (1/2/3). Fails fast instead
+            of silently downloading nothing or burning quota on invalid values.
+    """
+    defaults = {
+        "daily": [1, 2, 3],
+        "weekly": [1, 2, 3],
+        "monthly": [1, 2, 3],
+        "minute": [3],
+    }
+    if freq not in defaults:
+        raise ValueError(
+            f"Unknown K-line frequency: {freq!r} (expected one of {sorted(defaults)})"
+        )
+    key = f"download.kline.{freq}.adjustflags"
+    value = get_nested_value(
+        get_download_config(), ["kline", freq, "adjustflags"], defaults[freq]
+    )
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"Invalid {key}: must be a non-empty list, got {value!r}")
+    for flag in value:
+        if isinstance(flag, bool) or not isinstance(flag, int) or flag not in (1, 2, 3):
+            raise ValueError(
+                f"Invalid {key}: {flag!r} is not a valid adjustflag "
+                f"(1=post-adjust, 2=pre-adjust, 3=no adjust)"
+            )
+    return list(value)
+
+
 def get_financial_start_year() -> int:
     """Get start year for financial data downloads."""
     return get_nested_value(get_download_config(), ["financial", "start_year"], 2007)

@@ -710,7 +710,10 @@ for code, year, quarter in all_combinations:
 | `batch_size` | 200 | config.yaml | 每批处理股票数；同时是限速窗口（每 N 次请求暂停一次） |
 | `batch_sleep` | 1 | config.yaml | 每个限速窗口后的停顿（秒；分红/复权/报表/K 线同款节奏） |
 | `stocks.filter` | type=1 AND status=1 | config.yaml | 股票筛选条件（SQL WHERE） |
-| `kline.daily.adjustflags` | [1, 2, 3] | config.yaml | 日线复权方式 |
+| `kline.daily.adjustflags` | [1, 2, 3] | config.yaml | 日线复权方式（1=后复权、2=前复权、3=不复权；非法值 fail-fast） |
+| `kline.weekly.adjustflags` | [1, 2, 3] | config.yaml | 周线复权方式 |
+| `kline.monthly.adjustflags` | [1, 2, 3] | config.yaml | 月线复权方式 |
+| `download.<模块>.enabled` | true | config.yaml | 按模块下载开关：components / index_kline / kline.daily&#124;weekly&#124;monthly&#124;minute / financial / reports / dividend / macro（update_daily 与 download_all 各阶段） |
 | `kline.minute.adjustflags` | [3] | config.yaml | 分钟线复权方式（默认仅不复权） |
 | `kline.minute.enabled` | false | config.yaml | 是否下载分钟数据 |
 | `financial.start_year` | 2007 | config.yaml | 财务数据起始年份 |
